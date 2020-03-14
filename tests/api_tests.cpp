@@ -16,10 +16,54 @@ void populate_arena(const std::vector<const char*> &devices) {
     system(command.str().c_str());
 }
 
+struct MockSystem : ev3::ISystem {
+    struct MockOstream : ev3::file_ostream {
+        MockOstream(const std::string&) {}
+
+        bool is_open() const override { return true; }
+        void close() override { }
+        void clear() override { }
+
+        std::ostream& get() override { return _stream; }
+        const std::ostream& get() const override { return _stream; }
+
+        std::ostringstream _stream;
+    };
+
+    struct MockIstream : ev3::file_ostream {
+        MockIstream(const std::string&) {}
+
+        bool is_open() const override { return true; }
+        void close() override {  }
+        void clear() override {  }
+
+        std::istream& get() override { return _stream; }
+        const std::istream& get() const override { return _stream; }
+
+        std::istringstream _stream;
+    };
+
+    std::unique_ptr<ev3::file_ostream> OpenForWrite(const std::string &path) const override {
+        return std::make_unique<MockOstream>(path);
+    }
+
+    std::unique_ptr<ev3::file_istream> OpenForRead(const std::string &path) const override {
+        return std::make_unique<MockIstream>(path);
+    }
+
+    void System(const char *command) const override
+    {
+        system_calls.emplace_back(command);
+    }
+
+    mutable std::vector<std::string> system_calls;
+};
+
 TEST_CASE( "Device" ) {
     populate_arena({"medium_motor:0@ev3-ports:outA", "infrared_sensor:0@ev3-ports:in1"});
 
-    ev3::device d;
+    MockSystem sys;
+    ev3::device d{sys};
 
     SECTION("connect any motor") {
         d.connect(SYS_ROOT "/tacho-motor/", "motor", {});
@@ -58,7 +102,8 @@ TEST_CASE( "Device" ) {
 TEST_CASE("Medium Motor") {
     populate_arena({"medium_motor:0@ev3-ports:outA"});
 
-    ev3::medium_motor m;
+    MockSystem sys;
+    ev3::medium_motor m{ev3::OUTPUT_AUTO, sys};
 
     REQUIRE(m.connected());
     REQUIRE(m.device_index() == 0);
@@ -96,7 +141,9 @@ TEST_CASE("Medium Motor") {
 
 TEST_CASE("Infrared Sensor") {
     populate_arena({"infrared_sensor:0@ev3-ports:in1"});
-    ev3::infrared_sensor s;
+
+    MockSystem sys;
+    ev3::infrared_sensor s{ev3::INPUT_AUTO, sys};
 
     REQUIRE(s.connected());
 

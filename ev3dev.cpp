@@ -63,6 +63,9 @@
 #endif
 static const int bits_per_long = sizeof(long) * 8;
 
+ev3dev::RealSystem ev3dev::default_system{};
+
+
 namespace ev3dev {
 namespace {
 
@@ -77,14 +80,16 @@ class lru_cache {
             K first;
             V second;
 
-            item(const K &k) : first(k) {}
-            item(item &&m) : first(std::move(m.first)), second(std::move(m.second)) {}
+            template <typename TMakeValue>
+            item(const K &k, TMakeValue&& makeValue) : first(k), second{makeValue(k)} {}
+            item(item &&m) = default;
         };
 
     public:
         lru_cache(size_t size = 3) : _size(size) {}
 
-        V &operator[] (const K &k) {
+        template <typename TMakeValue>
+        V& get(const K &k, TMakeValue&& makeValue) {
             iterator i = find(k);
             if (i != _items.end()) {
                 // Found the key, bring the item to the front.
@@ -95,7 +100,7 @@ class lru_cache {
                     _items.pop_back();
                 }
                 // Insert a new default constructed value for this new key.
-                _items.emplace_front(k);
+                _items.emplace_back(k, std::forward<TMakeValue>(makeValue));
             }
             // The new item is the most recently used.
             return _items.front().second;
@@ -118,49 +123,88 @@ class lru_cache {
 };
 
 // A global cache of files.
-std::ifstream& ifstream_cache(const std::string &path) {
-    static lru_cache<std::string, std::ifstream> cache(FSTREAM_CACHE_SIZE);
+file_istream& ifstream_cache(const std::string &path, const ISystem& sys) {
+    static lru_cache<std::string, std::unique_ptr<file_istream>> cache(FSTREAM_CACHE_SIZE);
     static std::mutex mx;
 
     std::lock_guard<std::mutex> lock(mx);
-    return cache[path];
+    return *cache.get(path, [&sys](const auto &path) { return sys.OpenForRead(path); });
 }
 
-std::ofstream& ofstream_cache(const std::string &path) {
-    static lru_cache<std::string, std::ofstream> cache(FSTREAM_CACHE_SIZE);
+file_ostream& ofstream_cache(const std::string &path, const ISystem& sys) {
+    static lru_cache<std::string, std::unique_ptr<file_ostream>> cache(FSTREAM_CACHE_SIZE);
     static std::mutex mx;
 
     std::lock_guard<std::mutex> lock(mx);
-    return cache[path];
+    return *cache.get(path, [&sys](const auto &path) { return sys.OpenForWrite(path); });
 }
 
 //-----------------------------------------------------------------------------
-std::ofstream &ofstream_open(const std::string &path) {
-    std::ofstream &file = ofstream_cache(path);
-    if (!file.is_open()) {
-        // Don't buffer writes to avoid latency. Also saves a bit of memory.
-        file.rdbuf()->pubsetbuf(NULL, 0);
-        file.open(path);
-    } else {
-        // Clear the error bits in case something happened.
-        file.clear();
-    }
+file_ostream &ofstream_open(const std::string &path, const ISystem& sys) {
+    auto &file = ofstream_cache(path, sys);
+    file.get().clear();
     return file;
 }
 
-std::ifstream &ifstream_open(const std::string &path) {
-    std::ifstream &file = ifstream_cache(path);
-    if (!file.is_open()) {
-        file.open(path);
-    } else {
-        // Clear the flags bits in case something happened (like reaching EOF).
-        file.clear();
-        file.seekg(0, std::ios::beg);
-    }
+file_istream &ifstream_open(const std::string &path, const ISystem& sys) {
+    auto &file = ifstream_cache(path, sys);
+    // Clear the flags bits in case something happened (like reaching EOF).
+    file.get().clear();
+    file.get().seekg(0, std::ios::beg);
     return file;
 }
+
+struct file_ofstream : public file_ostream {
+    file_ofstream(const std::string& file) : _stream{file} {}
+
+    std::ostream& get() override { return _stream; }
+    const std::ostream& get() const override { return _stream; }
+
+    bool is_open() const override { return _stream.is_open(); }
+    void close() override { return _stream.close(); }
+    void clear() override { return _stream.clear(); }
+
+    std::ofstream _stream;
+};
+
+struct file_ifstream : public file_istream {
+    file_ifstream(const std::string& file) : _stream{file} {}
+
+    bool is_open() const override { return _stream.is_open(); }
+    void close() override { return _stream.close(); }
+    void clear() override { return _stream.clear(); }
+
+    std::istream& get() override { return _stream; }
+    const std::istream& get() const override { return _stream; }
+    std::ifstream _stream;
+};
 
 } // namespace
+
+
+//-----------------------------------------------------------------------------
+// RealSystem
+//-----------------------------------------------------------------------------
+
+std::unique_ptr<file_ostream> RealSystem::OpenForWrite(const std::string &path) const {
+    auto file = std::make_unique<file_ofstream>(path);
+    if (!file->_stream.is_open()) {
+        // Don't buffer writes to avoid latency. Also saves a bit of memory.
+        file->_stream.rdbuf()->pubsetbuf(NULL, 0);
+        file->_stream.open(path);
+    }
+    return file;
+}
+
+std::unique_ptr<file_istream> RealSystem::OpenForRead(const std::string &path) const {
+    auto file = std::make_unique<file_ifstream>(path);
+    file->_stream.open(path);
+    return file;
+}
+
+void RealSystem::System(const char *command) const {
+    std::system(command);
+}
 
 //-----------------------------------------------------------------------------
 bool device::connect(
@@ -224,7 +268,7 @@ int device::device_index() const {
         _device_index = 0;
         for (auto it=_path.rbegin(); it!=_path.rend(); ++it) {
             if(*it =='/')
-                continue;		
+                continue;
             if ((*it < '0') || (*it > '9'))
                 break;
 
@@ -244,11 +288,11 @@ int device::get_attr_int(const std::string &name) const {
         throw system_error(make_error_code(errc::function_not_supported), "no device connected");
 
     for(int attempt = 0; attempt < 2; ++attempt) {
-        ifstream &is = ifstream_open(_path + name);
+        auto &is = ifstream_open(_path + name, _system);
         if (is.is_open()) {
             int result = 0;
             try {
-                is >> result;
+                is.get() >> result;
                 return result;
             } catch(...) {
                 // This could mean the sysfs attribute was recreated and the
@@ -272,9 +316,9 @@ void device::set_attr_int(const std::string &name, int value) {
         throw system_error(make_error_code(errc::function_not_supported), "no device connected");
 
     for(int attempt = 0; attempt < 2; ++attempt) {
-        ofstream &os = ofstream_open(_path + name);
+        auto &os = ofstream_open(_path + name, _system);
         if (os.is_open()) {
-            if (os << value) return;
+            if (os.get() << value) return;
 
             // An error could mean that sysfs attribute was recreated and the cached
             // file handle is stale. Lets close the file and try again (once):
@@ -297,10 +341,10 @@ std::string device::get_attr_string(const std::string &name) const {
     if (_path.empty())
         throw system_error(make_error_code(errc::function_not_supported), "no device connected");
 
-    ifstream &is = ifstream_open(_path + name);
+    auto &is = ifstream_open(_path + name, _system);
     if (is.is_open()) {
         string result;
-        is >> result;
+        is.get() >> result;
         return result;
     }
 
@@ -314,9 +358,9 @@ void device::set_attr_string(const std::string &name, const std::string &value) 
     if (_path.empty())
         throw system_error(make_error_code(errc::function_not_supported), "no device connected");
 
-    ofstream &os = ofstream_open(_path + name);
+    auto &os = ofstream_open(_path + name, _system);
     if (os.is_open()) {
-        if (!(os << value)) throw system_error(std::error_code(errno, std::system_category()));
+        if (!(os.get() << value)) throw system_error(std::error_code(errno, std::system_category()));
         return;
     }
 
@@ -330,10 +374,10 @@ std::string device::get_attr_line(const std::string &name) const {
     if (_path.empty())
         throw system_error(make_error_code(errc::function_not_supported), "no device connected");
 
-    ifstream &is = ifstream_open(_path + name);
+    auto &is = ifstream_open(_path + name, _system);
     if (is.is_open()) {
         string result;
-        getline(is, result);
+        getline(is.get(), result);
         return result;
     }
 
@@ -416,12 +460,12 @@ constexpr char sensor::nxt_i2c_sensor[];
 constexpr char sensor::nxt_analog[];
 
 //-----------------------------------------------------------------------------
-sensor::sensor(address_type address) {
+sensor::sensor(address_type address, const ISystem& system) : device{system} {
     connect({{ "address", { address }}});
 }
 
 //-----------------------------------------------------------------------------
-sensor::sensor(address_type address, const std::set<sensor_type> &types) {
+sensor::sensor(address_type address, const std::set<sensor_type> &types, const ISystem& system) : device{system} {
     connect({{ "address", { address }}, { "driver_name", types }});
 }
 
@@ -514,9 +558,9 @@ const std::vector<char>& sensor::bin_data() const {
     }
 
     const string fname = _path + "bin_data";
-    ifstream &is = ifstream_open(fname);
+    auto &is = ifstream_open(fname, _system);
     if (is.is_open()) {
-        is.read(_bin_data.data(), _bin_data.size());
+        is.get().read(_bin_data.data(), _bin_data.size());
         return _bin_data;
     }
 
@@ -524,15 +568,15 @@ const std::vector<char>& sensor::bin_data() const {
 }
 
 //-----------------------------------------------------------------------------
-i2c_sensor::i2c_sensor(address_type address, const std::set<sensor_type> &types)
-    : sensor(address, types)
+i2c_sensor::i2c_sensor(address_type address, const std::set<sensor_type> &types, const ISystem& system)
+    : sensor(address, types, system)
 { }
 
 //-----------------------------------------------------------------------------
 constexpr char touch_sensor::mode_touch[];
 
-touch_sensor::touch_sensor(address_type address)
-    : sensor(address, { ev3_touch, nxt_touch })
+touch_sensor::touch_sensor(address_type address, const ISystem& system)
+    : sensor(address, { ev3_touch, nxt_touch }, system)
 { }
 
 //-----------------------------------------------------------------------------
@@ -550,8 +594,8 @@ constexpr char color_sensor::color_red[];
 constexpr char color_sensor::color_white[];
 constexpr char color_sensor::color_brown[];
 
-color_sensor::color_sensor(address_type address)
-    : sensor(address, { ev3_color })
+color_sensor::color_sensor(address_type address, const ISystem& system)
+    : sensor(address, { ev3_color }, system)
 { }
 
 //-----------------------------------------------------------------------------
@@ -561,12 +605,12 @@ constexpr char ultrasonic_sensor::mode_us_listen[];
 constexpr char ultrasonic_sensor::mode_us_si_cm[];
 constexpr char ultrasonic_sensor::mode_us_si_in[];
 
-ultrasonic_sensor::ultrasonic_sensor(address_type address)
-    : sensor(address, { ev3_ultrasonic, nxt_ultrasonic })
+ultrasonic_sensor::ultrasonic_sensor(address_type address, const ISystem& system)
+    : sensor(address, { ev3_ultrasonic, nxt_ultrasonic }, system)
 { }
 
-ultrasonic_sensor::ultrasonic_sensor(address_type address, const std::set<sensor_type>& sensorTypes)
-    : sensor(address, sensorTypes)
+ultrasonic_sensor::ultrasonic_sensor(address_type address, const std::set<sensor_type>& sensorTypes, const ISystem& system)
+    : sensor(address, sensorTypes, system)
 { }
 
 //-----------------------------------------------------------------------------
@@ -576,8 +620,8 @@ constexpr char gyro_sensor::mode_gyro_fas[];
 constexpr char gyro_sensor::mode_gyro_g_a[];
 constexpr char gyro_sensor::mode_gyro_cal[];
 
-gyro_sensor::gyro_sensor(address_type address)
-    : sensor(address, { ev3_gyro })
+gyro_sensor::gyro_sensor(address_type address, const ISystem& system)
+    : sensor(address, { ev3_gyro }, system)
 { }
 
 //-----------------------------------------------------------------------------
@@ -587,16 +631,16 @@ constexpr char infrared_sensor::mode_ir_remote[];
 constexpr char infrared_sensor::mode_ir_rem_a[];
 constexpr char infrared_sensor::mode_ir_cal[];
 
-infrared_sensor::infrared_sensor(address_type address)
-    : sensor(address, { ev3_infrared })
+infrared_sensor::infrared_sensor(address_type address, const ISystem& system)
+    : sensor(address, { ev3_infrared }, system)
 { }
 
 //-----------------------------------------------------------------------------
 constexpr char sound_sensor::mode_db[];
 constexpr char sound_sensor::mode_dba[];
 
-sound_sensor::sound_sensor(address_type address)
-    : sensor(address, { nxt_sound, nxt_analog })
+sound_sensor::sound_sensor(address_type address, const ISystem& system)
+    : sensor(address, { nxt_sound, nxt_analog }, system)
 {
     if (connected() && driver_name() == nxt_analog) {
         lego_port port(address);
@@ -618,8 +662,8 @@ sound_sensor::sound_sensor(address_type address)
 constexpr char light_sensor::mode_reflect[];
 constexpr char light_sensor::mode_ambient[];
 
-light_sensor::light_sensor(address_type address)
-    : sensor(address, { nxt_light })
+light_sensor::light_sensor(address_type address, const ISystem& system)
+    : sensor(address, { nxt_light }, system)
 { }
 
 //-----------------------------------------------------------------------------
@@ -647,12 +691,12 @@ constexpr char motor::stop_action_brake[];
 constexpr char motor::stop_action_hold[];
 
 //-----------------------------------------------------------------------------
-motor::motor(address_type address) {
+motor::motor(address_type address, const ISystem& system) : device{system} {
     connect({{ "address", { address } }});
 }
 
 //-----------------------------------------------------------------------------
-motor::motor(address_type address, const motor_type &t) {
+motor::motor(address_type address, const motor_type &t, const ISystem& system) : device{system} {
     connect({{ "address", { address } }, { "driver_name", { t }}});
 }
 
@@ -672,22 +716,22 @@ bool motor::connect(const std::map<std::string, std::set<std::string>> &match) n
 }
 
 //-----------------------------------------------------------------------------
-medium_motor::medium_motor(address_type address)
-    : motor(address, motor_medium)
+medium_motor::medium_motor(address_type address, const ISystem& system)
+    : motor(address, motor_medium, system)
 { }
 
 //-----------------------------------------------------------------------------
-large_motor::large_motor(address_type address)
-    : motor(address, motor_large)
+large_motor::large_motor(address_type address, const ISystem& system)
+    : motor(address, motor_large, system)
 { }
 
 //-----------------------------------------------------------------------------
-nxt_motor::nxt_motor(address_type address)
-    : motor(address, motor_nxt)
+nxt_motor::nxt_motor(address_type address, const ISystem& system)
+    : motor(address, motor_nxt, system)
 { }
 
 //-----------------------------------------------------------------------------
-dc_motor::dc_motor(address_type address) {
+dc_motor::dc_motor(address_type address, const ISystem& system) : device{system} {
     static const std::string _strClassDir { SYS_ROOT "/dc-motor/" };
     static const std::string _strPattern  { "motor" };
 
@@ -704,7 +748,7 @@ constexpr char dc_motor::stop_action_coast[];
 constexpr char dc_motor::stop_action_brake[];
 
 //-----------------------------------------------------------------------------
-servo_motor::servo_motor(address_type address) {
+servo_motor::servo_motor(address_type address, const ISystem& system) : device{system} {
     static const std::string _strClassDir { SYS_ROOT "/servo-motor/" };
     static const std::string _strPattern  { "motor" };
 
@@ -717,7 +761,7 @@ constexpr char servo_motor::polarity_normal[];
 constexpr char servo_motor::polarity_inversed[];
 
 //-----------------------------------------------------------------------------
-led::led(std::string name) {
+led::led(std::string name, const ISystem& system) : device{system} {
     static const std::string _strClassDir { SYS_ROOT "/leds/" };
     connect(_strClassDir, name, std::map<std::string, std::set<std::string>>());
 }
@@ -851,7 +895,7 @@ void led::set_color(const std::vector<led*> &group, const std::vector<float> &co
 power_supply power_supply::battery { "" };
 
 //-----------------------------------------------------------------------------
-power_supply::power_supply(std::string name) {
+power_supply::power_supply(std::string name, const ISystem& system) : device{system} {
     static const std::string _strClassDir { SYS_ROOT "/power_supply/" };
 
     if (name.empty())
@@ -871,7 +915,8 @@ button::file_descriptor::~file_descriptor() {
 
 //-----------------------------------------------------------------------------
 button::button(int bit)
-    : _bit(bit),
+    :
+       _bit(bit),
       _buf((KEY_CNT + bits_per_long - 1) / bits_per_long),
       _fd( new file_descriptor("/dev/input/by-path/platform-gpio_keys-event", O_RDONLY) )
 { }
@@ -923,18 +968,18 @@ bool button::process_all() {
 }
 
 //-----------------------------------------------------------------------------
-void sound::beep(const std::string &args, bool bSynchronous) {
+void sound::beep(const std::string &args, bool bSynchronous, const ISystem& system) {
     std::ostringstream cmd;
     cmd << "/usr/bin/beep " << args;
     if (!bSynchronous) cmd << " &";
-    std::system(cmd.str().c_str());
+    system.System(cmd.str().c_str());
 }
 
 //-----------------------------------------------------------------------------
 void sound::tone(
         const std::vector< std::vector<float> > &sequence,
-        bool bSynchronous
-        )
+        bool bSynchronous,
+        const ISystem& system)
 {
     std::ostringstream args;
     bool first = true;
@@ -965,26 +1010,26 @@ void sound::tone(
         }
     }
 
-    beep(args.str(), bSynchronous);
+    beep(args.str(), bSynchronous, system);
 }
 
 //-----------------------------------------------------------------------------
-void sound::tone(float frequency, float ms, bool bSynchronous) {
-    tone({{frequency, ms, 0.0f}}, bSynchronous);
+void sound::tone(float frequency, float ms, bool bSynchronous, const ISystem& system) {
+    tone({{frequency, ms, 0.0f}}, bSynchronous, system);
 }
 
 //-----------------------------------------------------------------------------
-void sound::play(const std::string &soundfile, bool bSynchronous) {
+void sound::play(const std::string &soundfile, bool bSynchronous, const ISystem& system) {
     std::ostringstream cmd;
     cmd << "/usr/bin/aplay -q " << soundfile;
 
     if (!bSynchronous) cmd << " &";
 
-    std::system(cmd.str().c_str());
+    system.System(cmd.str().c_str());
 }
 
 //-----------------------------------------------------------------------------
-void sound::speak(const std::string &text, bool bSynchronous) {
+void sound::speak(const std::string &text, bool bSynchronous, const ISystem& system) {
     std::ostringstream cmd;
 
     cmd << "/usr/bin/espeak -a 200 --stdout \"" << text << "\""
@@ -992,7 +1037,7 @@ void sound::speak(const std::string &text, bool bSynchronous) {
 
     if (!bSynchronous) cmd << " &";
 
-    std::system(cmd.str().c_str());
+    system.System(cmd.str().c_str());
 }
 
 //-----------------------------------------------------------------------------
@@ -1162,7 +1207,7 @@ void remote_control::on_value_changed(int value) {
 }
 
 //-----------------------------------------------------------------------------
-lego_port::lego_port(address_type address) {
+lego_port::lego_port(address_type address, const ISystem& system) : device{system} {
     connect({{ "address", { address } }});
 }
 

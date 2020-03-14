@@ -1,0 +1,4 @@
+[{
+    "name": "ev3",
+    "toolchainFile": "../cmake/ev3.toolchain.cmake"
+}]

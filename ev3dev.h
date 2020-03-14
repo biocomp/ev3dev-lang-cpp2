@@ -34,6 +34,8 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
+#include <ostream>
+#include <istream>
 
 namespace ev3dev {
 
@@ -89,11 +91,56 @@ constexpr char OUTPUT_C[] = "ev3-ports:outC"; //!< Motor port C
 constexpr char OUTPUT_D[] = "ev3-ports:outD"; //!< Motor port D
 #endif
 
+class file_istream {
+    public:
+        virtual bool is_open() const = 0;
+        virtual void close() = 0;
+        virtual void clear() = 0;
+
+        virtual std::istream& get() = 0;
+        virtual const std::istream& get() const = 0;
+
+        virtual ~file_istream() = default;
+};
+
+class file_ostream {
+public:
+    virtual bool is_open() const = 0;
+    virtual void close() = 0;
+    virtual void clear() = 0;
+
+    virtual std::ostream& get() = 0;
+    virtual const std::ostream& get() const = 0;
+
+    virtual ~file_ostream() = default;
+};
+
+class ISystem
+{
+public:
+    virtual std::unique_ptr<file_ostream> OpenForWrite(const std::string &path) const = 0;
+    virtual std::unique_ptr<file_istream> OpenForRead(const std::string &path) const = 0;
+    virtual void System(const char *command) const = 0;
+    virtual ~ISystem() = default;
+};
+
+class RealSystem : public ISystem
+{
+public:
+    std::unique_ptr<file_ostream> OpenForWrite(const std::string &path) const override;
+    std::unique_ptr<file_istream> OpenForRead(const std::string &path) const override;
+    void System(const char *command) const override;
+};
+
+extern RealSystem default_system;
+
 //-----------------------------------------------------------------------------
 // Generic device class.
 //-----------------------------------------------------------------------------
 class device {
     public:
+        device(const ISystem& system) : _system{system} {}
+
         bool connect(const std::string &dir,
                 const std::string &pattern,
                 const std::map<std::string, std::set<std::string>> &match) noexcept;
@@ -118,17 +165,18 @@ class device {
     protected:
         std::string _path;
         mutable int _device_index = -1;
+        const ISystem& _system;
 };
 
 //-----------------------------------------------------------------------------
 // The sensor class provides a uniform interface for using most of the
 // sensors available for the EV3. The various underlying device drivers will
 // create a `lego-sensor` device for interacting with the sensors.
-// 
+//
 // Sensors are primarily controlled by setting the `mode` and monitored by
 // reading the `value<N>` attributes. Values can be converted to floating point
 // if needed by `value<N>` / 10.0 ^ `decimals`.
-// 
+//
 // Since the name of the `sensor<N>` device node does not correspond to the port
 // that a sensor is plugged in to, you must look at the `address` attribute if
 // you need to know which port a sensor is plugged in to. However, if you don't
@@ -153,8 +201,8 @@ class sensor : protected device {
         static constexpr char nxt_i2c_sensor[] = "nxt-i2c-sensor";
         static constexpr char nxt_analog[]     = "nxt-analog";
 
-        sensor(address_type);
-        sensor(address_type, const std::set<sensor_type>&);
+        sensor(address_type, const ISystem& system = default_system);
+        sensor(address_type, const std::set<sensor_type>&, const ISystem& system = default_system);
 
         using device::connected;
         using device::device_index;
@@ -251,7 +299,7 @@ class sensor : protected device {
         std::string units() const { return get_attr_string("units"); }
 
     protected:
-        sensor() {}
+        sensor(const ISystem& system) : device{system} {}
 
         bool connect(const std::map<std::string, std::set<std::string>>&) noexcept;
 
@@ -265,8 +313,8 @@ class i2c_sensor : public sensor {
     public:
         i2c_sensor(
                 address_type address = INPUT_AUTO,
-                const std::set<sensor_type> &types = {}
-                );
+                const std::set<sensor_type> &types = {},
+                const ISystem& system = default_system);
 
         // FW Version: read-only
         // Returns the firmware version of the sensor if available. Currently only
@@ -290,7 +338,8 @@ class i2c_sensor : public sensor {
 //-----------------------------------------------------------------------------
 class touch_sensor : public sensor {
     public:
-        touch_sensor(address_type address = INPUT_AUTO);
+        touch_sensor(address_type address = INPUT_AUTO,
+                const ISystem& system = default_system);
 
         // Button state
         static constexpr char mode_touch[] = "TOUCH";
@@ -309,7 +358,8 @@ class touch_sensor : public sensor {
 //-----------------------------------------------------------------------------
 class color_sensor : public sensor {
     public:
-        color_sensor(address_type address = INPUT_AUTO);
+        color_sensor(address_type address = INPUT_AUTO,
+                const ISystem& system = default_system);
 
         // Reflected light. Red LED on.
         static constexpr char mode_col_reflect[] = "COL-REFLECT";
@@ -407,9 +457,11 @@ class color_sensor : public sensor {
 //-----------------------------------------------------------------------------
 class ultrasonic_sensor : public sensor {
     public:
-        ultrasonic_sensor(address_type address = INPUT_AUTO);
+        ultrasonic_sensor(address_type address = INPUT_AUTO,
+                const ISystem& system = default_system);
 
-        ultrasonic_sensor(address_type address, const std::set<sensor_type>& sensorTypes);
+        ultrasonic_sensor(address_type address, const std::set<sensor_type>& sensorTypes,
+                const ISystem& system = default_system);
 
         // Continuous measurement in centimeters.
         static constexpr char mode_us_dist_cm[] = "US-DIST-CM";
@@ -454,7 +506,8 @@ class ultrasonic_sensor : public sensor {
 //-----------------------------------------------------------------------------
 class gyro_sensor : public sensor {
     public:
-        gyro_sensor(address_type address = INPUT_AUTO);
+        gyro_sensor(address_type address = INPUT_AUTO,
+                const ISystem& system = default_system);
 
         // Angle
         static constexpr char mode_gyro_ang[] = "GYRO-ANG";
@@ -497,7 +550,8 @@ class gyro_sensor : public sensor {
 //-----------------------------------------------------------------------------
 class infrared_sensor : public sensor {
     public:
-        infrared_sensor(address_type address = INPUT_AUTO);
+        infrared_sensor(address_type address = INPUT_AUTO,
+                const ISystem& system = default_system);
 
         // Proximity
         static constexpr char mode_ir_prox[] = "IR-PROX";
@@ -528,7 +582,8 @@ class infrared_sensor : public sensor {
 //-----------------------------------------------------------------------------
 class sound_sensor : public sensor {
     public:
-        sound_sensor(address_type address = INPUT_AUTO);
+        sound_sensor(address_type address = INPUT_AUTO,
+                const ISystem& system = default_system);
 
         // Sound pressure level. Flat weighting
         static constexpr char mode_db[] = "DB";
@@ -557,7 +612,8 @@ class sound_sensor : public sensor {
 //-----------------------------------------------------------------------------
 class light_sensor : public sensor {
     public:
-        light_sensor(address_type address = INPUT_AUTO);
+        light_sensor(address_type address = INPUT_AUTO,
+                const ISystem& system = default_system);
 
         // Reflected light. LED on
         static constexpr char mode_reflect[] = "REFLECT";
@@ -584,7 +640,7 @@ class light_sensor : public sensor {
 // positional and directional feedback such as the EV3 and NXT motors.
 // This feedback allows for precise control of the motors. This is the
 // most common type of motor, so we just call it `motor`.
-// 
+//
 // The way to configure a motor is to set the '_sp' attributes when
 // calling a command or before. Only in 'run_direct' mode attribute
 // changes are processed immediately, in the other modes they only
@@ -594,8 +650,8 @@ class motor : protected device {
     public:
         typedef device_type motor_type;
 
-        motor(address_type);
-        motor(address_type, const motor_type&);
+        motor(address_type, const ISystem& system = default_system);
+        motor(address_type, const motor_type&, const ISystem& system = default_system);
 
         static constexpr char motor_large[]  = "lego-ev3-l-motor";
         static constexpr char motor_medium[] = "lego-ev3-m-motor";
@@ -693,7 +749,7 @@ class motor : protected device {
         // Returns a list of commands that are supported by the motor
         // controller. Possible values are `run-forever`, `run-to-abs-pos`, `run-to-rel-pos`,
         // `run-timed`, `run-direct`, `stop` and `reset`. Not all commands may be supported.
-        // 
+        //
         // - `run-forever` will cause the motor to run until another command is sent.
         // - `run-to-abs-pos` will run to an absolute position specified by `position_sp`
         //   and then stop using the action specified in `stop_action`.
@@ -948,7 +1004,7 @@ class motor : protected device {
         void reset() { set_command("reset"); }
 
     protected:
-        motor() {}
+        motor(const ISystem& system) : device{system} {}
 
         bool connect(const std::map<std::string, std::set<std::string>>&) noexcept;
 };
@@ -958,7 +1014,7 @@ class motor : protected device {
 //-----------------------------------------------------------------------------
 class medium_motor : public motor {
     public:
-        medium_motor(address_type address = OUTPUT_AUTO);
+        medium_motor(address_type address = OUTPUT_AUTO, const ISystem& system = default_system);
 };
 
 //-----------------------------------------------------------------------------
@@ -966,7 +1022,7 @@ class medium_motor : public motor {
 //-----------------------------------------------------------------------------
 class large_motor : public motor {
     public:
-        large_motor(address_type address = OUTPUT_AUTO);
+        large_motor(address_type address = OUTPUT_AUTO, const ISystem& system = default_system);
 };
 
 //-----------------------------------------------------------------------------
@@ -974,7 +1030,7 @@ class large_motor : public motor {
 //-----------------------------------------------------------------------------
 class nxt_motor : public motor {
     public:
-        nxt_motor(address_type address = OUTPUT_AUTO);
+        nxt_motor(address_type address = OUTPUT_AUTO, const ISystem& system = default_system);
 };
 
 //-----------------------------------------------------------------------------
@@ -984,7 +1040,7 @@ class nxt_motor : public motor {
 //-----------------------------------------------------------------------------
 class dc_motor : protected device {
     public:
-        dc_motor(address_type address = OUTPUT_AUTO);
+        dc_motor(address_type address = OUTPUT_AUTO, const ISystem& system = default_system);
 
         using device::connected;
         using device::device_index;
@@ -1144,7 +1200,7 @@ class dc_motor : protected device {
 //-----------------------------------------------------------------------------
 class servo_motor : protected device {
     public:
-        servo_motor(address_type address = OUTPUT_AUTO);
+        servo_motor(address_type address = OUTPUT_AUTO, const ISystem& system = default_system);
 
         using device::connected;
         using device::device_index;
@@ -1272,7 +1328,7 @@ class servo_motor : protected device {
 //-----------------------------------------------------------------------------
 class led : protected device {
     public:
-        led(std::string name);
+        led(std::string name, const ISystem& system = default_system);
 
         using device::connected;
 
@@ -1298,7 +1354,7 @@ class led : protected device {
         // complex. A simple trigger isn't configurable and is designed to slot into
         // existing subsystems with minimal additional code. Examples are the `ide-disk` and
         // `nand-disk` triggers.
-        // 
+        //
         // Complex triggers whilst available to all LEDs have LED specific
         // parameters and work on a per LED basis. The `timer` trigger is an example.
         // The `timer` trigger will periodically change the LED brightness between
@@ -1336,12 +1392,12 @@ class led : protected device {
 
         // Gets the LED's brightness as a percentage (0-1) of the maximum.
         float brightness_pct() const {
-            return static_cast<float>(brightness()) / max_brightness();
+            return static_cast<float>(brightness()) / static_cast<float>(max_brightness());
         }
 
         // Sets the LED's brightness as a percentage (0-1) of the maximum.
         led set_brightness_pct(float v) {
-            return set_brightness(v * max_brightness());
+            return set_brightness(static_cast<int>(v * static_cast<float>(max_brightness())));
         }
 
         // Turns the led on by setting its brightness to the maximum level.
@@ -1424,7 +1480,7 @@ class led : protected device {
 //-----------------------------------------------------------------------------
 class power_supply : protected device {
     public:
-        power_supply(std::string name);
+        power_supply(std::string name, const ISystem& system = default_system);
 
         using device::connected;
 
@@ -1448,8 +1504,8 @@ class power_supply : protected device {
         // Type: read-only
         std::string type() const { return get_attr_string("type"); }
 
-        float measured_amps()       const { return measured_current() / 1000000.f; }
-        float measured_volts()      const { return measured_voltage() / 1000000.f; }
+        float measured_amps()       const { return static_cast<float>(measured_current()) / 1000000.f; }
+        float measured_volts()      const { return static_cast<float>(measured_current()) / 1000000.f; }
 
         static power_supply battery;
 };
@@ -1505,11 +1561,11 @@ class button {
 //-----------------------------------------------------------------------------
 class sound {
     public:
-        static void beep(const std::string &args = "", bool bSynchronous = false);
-        static void tone(float frequency, float ms, bool bSynchronous = false);
-        static void tone(const std::vector< std::vector<float> > &sequence, bool bSynchronous = false);
-        static void play(const std::string &soundfile, bool bSynchronous = false);
-        static void speak(const std::string &text, bool bSynchronous = false);
+        static void beep(const std::string &args = "", bool bSynchronous = false, const ISystem& system = default_system);
+        static void tone(float frequency, float ms, bool bSynchronous = false, const ISystem& system = default_system);
+        static void tone(const std::vector< std::vector<float> > &sequence, bool bSynchronous = false, const ISystem& system = default_system);
+        static void play(const std::string &soundfile, bool bSynchronous = false, const ISystem& system = default_system);
+        static void speak(const std::string &text, bool bSynchronous = false, const ISystem& system = default_system);
 };
 
 //-----------------------------------------------------------------------------
@@ -1592,12 +1648,12 @@ class remote_control {
 // WeDo and LEGO Power Functions sensors and motors. Supported devices include
 // the LEGO MINDSTORMS EV3 Intelligent Brick, the LEGO WeDo USB hub and
 // various sensor multiplexers from 3rd party manufacturers.
-// 
+//
 // Some types of ports may have multiple modes of operation. For example, the
 // input ports on the EV3 brick can communicate with sensors using UART, I2C
 // or analog validate signals - but not all at the same time. Therefore there
 // are multiple modes available to connect to the different types of sensors.
-// 
+//
 // In most cases, ports are able to automatically detect what type of sensor
 // or motor is connected. In some cases though, this must be manually specified
 // using the `mode` and `set_device` attributes. The `mode` attribute affects
@@ -1607,7 +1663,7 @@ class remote_control {
 // appropriate for the connected sensor. The `set_device` attribute is used to
 // specify the exact type of sensor that is connected. Note: the mode must be
 // correctly set before setting the sensor type.
-// 
+//
 // Ports can be found at `/sys/class/lego-port/port<N>` where `<N>` is
 // incremented each time a new port is registered. Note: The number is not
 // related to the actual port at all - use the `address` attribute to find
@@ -1615,7 +1671,7 @@ class remote_control {
 //-----------------------------------------------------------------------------
 class lego_port : protected device {
     public:
-        lego_port(address_type);
+        lego_port(address_type, const ISystem& system = default_system);
 
         using device::connected;
         using device::device_index;
@@ -1664,7 +1720,7 @@ class lego_port : protected device {
         std::string status() const { return get_attr_string("status"); }
 
     protected:
-        lego_port() {}
+        lego_port(const ISystem& system) : device{system} {}
 
         bool connect(const std::map<std::string, std::set<std::string>>&) noexcept;
 };
