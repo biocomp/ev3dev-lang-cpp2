@@ -47,10 +47,6 @@
 #include <stdlib.h>
 #include <errno.h>
 
-#ifndef SYS_ROOT
-#  define SYS_ROOT "/sys/class"
-#endif
-
 #ifndef FSTREAM_CACHE_SIZE
 #  define FSTREAM_CACHE_SIZE 16
 #endif
@@ -88,6 +84,24 @@ class lru_cache {
     public:
         lru_cache(size_t size = 3) : _size(size) {}
 
+        // template <typename TMakeValue>
+        // V& get(const K &k, TMakeValue&& makeValue) {
+        //     iterator i = find(k);
+        //     if (i != _items.end()) {
+        //         // Found the key, bring the item to the front.
+        //         _items.splice(_items.begin(), _items, i);
+        //         return i->second;
+        //     } else {
+        //         // If the cache is full, remove oldest items to make room.
+        //         while (_items.size() + 1 > _size) {
+        //             _items.pop_back();
+        //         }
+
+        //         // Insert a new default constructed value for this new key.
+        //         return _items.emplace_back(k, std::forward<TMakeValue>(makeValue)).second;
+        //     }
+        // }
+
         template <typename TMakeValue>
         V& get(const K &k, TMakeValue&& makeValue) {
             iterator i = find(k);
@@ -100,7 +114,7 @@ class lru_cache {
                     _items.pop_back();
                 }
                 // Insert a new default constructed value for this new key.
-                _items.emplace_back(k, std::forward<TMakeValue>(makeValue));
+                _items.emplace_back(k, std::forward<TMakeValue>(makeValue)).second;
             }
             // The new item is the most recently used.
             return _items.front().second;
@@ -186,6 +200,8 @@ struct file_ifstream : public file_istream {
 // RealSystem
 //-----------------------------------------------------------------------------
 
+RealSystem::RealSystem() : _sys_root{"/sys/class"} {}
+
 std::unique_ptr<file_ostream> RealSystem::OpenForWrite(const std::string &path) const {
     auto file = std::make_unique<file_ofstream>(path);
     if (!file->_stream.is_open()) {
@@ -206,6 +222,26 @@ void RealSystem::System(const char *command) const {
     std::system(command);
 }
 
+const std::string& RealSystem::get_sys_root() const {
+    return _sys_root;
+}
+
+void RealSystem::ListFiles(zstring_ref dir, const std::function<bool(zstring_ref)>& fileFound) const {
+    struct dirent *dp;
+    auto dirCloser{[](DIR *dir) { closedir(dir); }};
+    std::unique_ptr<DIR, decltype(dirCloser)> dfd{nullptr, dirCloser};
+
+    dfd.reset(opendir(dir.c_str()));
+    if (dfd) {
+        while ((dp = readdir(dfd.get())) != nullptr) {
+            if (!fileFound(dp->d_name))
+            {
+                return;
+            }
+        }
+    }
+}
+
 //-----------------------------------------------------------------------------
 bool device::connect(
         const std::string &dir,
@@ -217,43 +253,39 @@ bool device::connect(
 
     const size_t pattern_length = pattern.length();
 
-    struct dirent *dp;
-    DIR *dfd;
+    bool result{false};
+    _system.ListFiles(dir, [&](zstring_ref fileName) {
+        if (strncmp(fileName.c_str(), pattern.c_str(), pattern_length)==0) {
+            try {
+                _path = dir + fileName.c_str() + '/';
 
-    if ((dfd = opendir(dir.c_str())) != nullptr) {
-        while ((dp = readdir(dfd)) != nullptr) {
-            if (strncmp(dp->d_name, pattern.c_str(), pattern_length)==0) {
-                try {
-                    _path = dir + dp->d_name + '/';
+                bool bMatch = true;
+                for (auto &m : match) {
+                    const auto &attribute = m.first;
+                    const auto &matches   = m.second;
+                    const auto strValue   = get_attr_string(attribute);
 
-                    bool bMatch = true;
-                    for (auto &m : match) {
-                        const auto &attribute = m.first;
-                        const auto &matches   = m.second;
-                        const auto strValue   = get_attr_string(attribute);
-
-                        if (!matches.empty() && !matches.begin()->empty() &&
-                                (matches.find(strValue) == matches.end()))
-                        {
-                            bMatch = false;
-                            break;
-                        }
+                    if (!matches.empty() && !matches.begin()->empty() &&
+                            (matches.find(strValue) == matches.end()))
+                    {
+                        bMatch = false;
+                        break;
                     }
+                }
 
-                    if (bMatch) {
-                        closedir(dfd);
-                        return true;
-                    }
-                } catch (...) { }
+                if (bMatch) {
+                    result = true;
+                    return false;
+                }
+            } catch (...) { }
 
-                _path.clear();
-            }
+            _path.clear();
         }
 
-        closedir(dfd);
-    }
+        return true;
+    });
 
-    return false;
+    return result;
 }
 
 //-----------------------------------------------------------------------------
@@ -472,7 +504,7 @@ sensor::sensor(address_type address, const std::set<sensor_type> &types, const I
 //-----------------------------------------------------------------------------
 bool sensor::connect(const std::map<std::string, std::set<std::string>> &match) noexcept
 {
-    static const std::string _strClassDir { SYS_ROOT "/lego-sensor/" };
+    std::string _strClassDir { _system.get_sys_root() + "/lego-sensor/" };
     static const std::string _strPattern  { "sensor" };
 
     try {
@@ -703,7 +735,7 @@ motor::motor(address_type address, const motor_type &t, const ISystem& system) :
 //-----------------------------------------------------------------------------
 bool motor::connect(const std::map<std::string, std::set<std::string>> &match) noexcept
 {
-    static const std::string _strClassDir { SYS_ROOT "/tacho-motor/" };
+    std::string _strClassDir { _system.get_sys_root() + "/tacho-motor/" };
     static const std::string _strPattern  { "motor" };
 
     try {
@@ -732,7 +764,7 @@ nxt_motor::nxt_motor(address_type address, const ISystem& system)
 
 //-----------------------------------------------------------------------------
 dc_motor::dc_motor(address_type address, const ISystem& system) : device{system} {
-    static const std::string _strClassDir { SYS_ROOT "/dc-motor/" };
+    std::string _strClassDir { _system.get_sys_root() + "/dc-motor/" };
     static const std::string _strPattern  { "motor" };
 
     connect(_strClassDir, _strPattern, {{ "address", { address }}});
@@ -749,7 +781,7 @@ constexpr char dc_motor::stop_action_brake[];
 
 //-----------------------------------------------------------------------------
 servo_motor::servo_motor(address_type address, const ISystem& system) : device{system} {
-    static const std::string _strClassDir { SYS_ROOT "/servo-motor/" };
+    std::string _strClassDir { _system.get_sys_root() + "/servo-motor/" };
     static const std::string _strPattern  { "motor" };
 
     connect(_strClassDir, _strPattern, {{ "address", { address }}});
@@ -762,7 +794,7 @@ constexpr char servo_motor::polarity_inversed[];
 
 //-----------------------------------------------------------------------------
 led::led(std::string name, const ISystem& system) : device{system} {
-    static const std::string _strClassDir { SYS_ROOT "/leds/" };
+    std::string _strClassDir { _system.get_sys_root() + "/leds/" };
     connect(_strClassDir, name, std::map<std::string, std::set<std::string>>());
 }
 
@@ -896,12 +928,10 @@ power_supply power_supply::battery { "" };
 
 //-----------------------------------------------------------------------------
 power_supply::power_supply(std::string name, const ISystem& system) : device{system} {
-    static const std::string _strClassDir { SYS_ROOT "/power_supply/" };
-
     if (name.empty())
         name = "lego-ev3-battery";
 
-    connect(_strClassDir, name, std::map<std::string, std::set<std::string>>());
+    connect(_system.get_sys_root() + "/power_supply", name, std::map<std::string, std::set<std::string>>());
 }
 
 //-----------------------------------------------------------------------------
@@ -1214,7 +1244,7 @@ lego_port::lego_port(address_type address, const ISystem& system) : device{syste
 //-----------------------------------------------------------------------------
 bool lego_port::connect(const std::map<std::string, std::set<std::string>> &match) noexcept
 {
-    static const std::string _strClassDir { SYS_ROOT "/lego-port/" };
+    std::string _strClassDir { _system.get_sys_root() + "/lego-port/" };
     static const std::string _strPattern  { "port" };
 
     try {

@@ -36,6 +36,8 @@
 #include <memory>
 #include <ostream>
 #include <istream>
+#include <cstring>
+#include <string_view>
 
 namespace ev3dev {
 
@@ -115,24 +117,47 @@ public:
     virtual ~file_ostream() = default;
 };
 
+using string_ref = std::string_view;
+
+class zstring_ref : public string_ref {
+public:
+    using string_ref::string_ref;
+
+    zstring_ref(const std::string& s) : string_ref{s.data(), s.size()} {}
+    constexpr auto c_str() const noexcept { return data(); }
+};
+
 class ISystem
 {
 public:
     virtual std::unique_ptr<file_ostream> OpenForWrite(const std::string &path) const = 0;
     virtual std::unique_ptr<file_istream> OpenForRead(const std::string &path) const = 0;
     virtual void System(const char *command) const = 0;
+
+    virtual void ListFiles(zstring_ref dir, const std::function<bool(zstring_ref)>& fileFound) const = 0;
+
+    virtual const std::string& get_sys_root() const = 0;
+
     virtual ~ISystem() = default;
 };
 
 class RealSystem : public ISystem
 {
 public:
+    RealSystem();
+
     std::unique_ptr<file_ostream> OpenForWrite(const std::string &path) const override;
     std::unique_ptr<file_istream> OpenForRead(const std::string &path) const override;
     void System(const char *command) const override;
+    void ListFiles(zstring_ref dir, const std::function<bool(zstring_ref)>& fileFound) const override;
+    const std::string &get_sys_root() const override;
+
+private:
+    std::string _sys_root;
 };
 
 extern RealSystem default_system;
+
 
 //-----------------------------------------------------------------------------
 // Generic device class.

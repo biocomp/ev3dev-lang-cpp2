@@ -18,7 +18,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#include "ev3dev.h"
+#include <menu.h>
+#include <display.h>
+
+using namespace ev3plotter;
 #include <thread>
 #include <chrono>
 #include <string>
@@ -27,7 +30,7 @@
 
 struct Motor
 {
-    Motor(std::string name, const char* port) : name{std::move(name)}, motor{port}
+    Motor(std::string nameSrc, const char* port) : name{std::move(nameSrc)}, motor{port}
     {}
 
     std::string name;
@@ -84,15 +87,81 @@ void drive(int speed, int distance, TMotors&&... motors)
     std::cout << "Done driving " << names << "!\n";
 }
 
+void wait_for_back_press() {
+    bool backPressed{false};
+    while (!backPressed)
+    {
+        backPressed = ev3dev::button::back.pressed ();
+        std::this_thread::sleep_for(std::chrono::milliseconds{100});
+    }
+}
+
+bool verify_device(const ev3dev::lcd& display) {
+    if (display.bits_per_pixel() != 1)
+    {
+        //std::cout << "########\n";
+        //std::cout << "Display does not have 1 bits per pixel! It has " << display.bits_per_pixel() << ". Failing..." << std::endl;
+        //wait_for_back_press();
+        //return false;
+    }
+
+    return true;
+}
+
+
+void draw_something(ev3dev::lcd& display) {
+    auto* buffer = display.frame_buffer();
+
+    Display d{buffer, display.resolution_x(), display.resolution_y()};
+
+    // std::this_thread::sleep_for(std::chrono::seconds{2});
+    // display.fill(0xff);
+    // std::this_thread::sleep_for(std::chrono::seconds{2});
+
+
+    bool backPressed{false};
+    std::uint32_t x = 0;
+    while (!backPressed)
+    {
+        if ((x + 40) >= d.width) {
+            x = 0;
+        }
+
+        d.fill(false);
+        rectangle(d, x, 10, 40, 40, true);
+        //d.set(0, 0, true);
+        //d.set(1, 1, true);
+        //d.set(2, 2, true);
+        d.draw();
+
+        //buffer[display.resolution_x()] = 0xfe;
+
+        backPressed = ev3dev::button::back.pressed ();
+        std::this_thread::sleep_for(std::chrono::milliseconds{100});
+        ++x;
+    }
+}
+
 int main()
 {
-    Motor x{"X", ev3dev::OUTPUT_A};
-    Motor y{"Y", ev3dev::OUTPUT_B};
+    ev3dev::lcd display{};
+
+    if (!verify_device(display))
+    {
+        return -1;
+    }
+
+    draw_something(display);
+
+    wait_for_back_press();
+
+    //Motor x{"X", ev3dev::OUTPUT_A};
+    //Motor y{"Y", ev3dev::OUTPUT_B};
 
     //x.motor.
 
-    drive(100, 500, x, y);
-    drive(100, -500, x, y);
+    //drive(100, 500, x, y);
+    //drive(100, -500, x, y);
 
     return 0;
 }
