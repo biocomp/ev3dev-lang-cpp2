@@ -113,18 +113,20 @@ TEST_CASE("Display properly puts pixels into buffer") {
 )");
 }
 
+template <std::uint32_t W, std::uint32_t H>
+struct MockDispay{
+    static constexpr std::uint32_t displayWidth = W;
+    static constexpr std::uint32_t displayHeight = H;
 
-struct TenBySixDisplay{
-    static constexpr std::uint32_t displayWidth = 10;
-    static constexpr std::uint32_t displayHeight = 6;
-
-    TenBySixDisplay() {
+    MockDispay() {
         std::fill(std::begin(buffer), std::end(buffer), 0xff);
     }
 
     unsigned char buffer[displayWidth*displayHeight*4];
     Display d{buffer, displayWidth, displayHeight};
 };
+
+using TenBySixDisplay = MockDispay<10, 6>;
 
 
 TEST_CASE("Rectangles") {
@@ -225,17 +227,26 @@ TEST_CASE("Lines") {
 }
 
 
-TEST_CASE_METHOD(TenBySixDisplay, "Text, with some overflow") {
+TEST_CASE_METHOD((MockDispay<50, 14>), "Text, with some overflow") {
     SECTION("A") {
-        print_text(d, 2, 0, "AA", true);
+        print_text(d, 2, 12, "ABCDE", true);
+        d.set(0, 12, true);
 
         REQUIRE(get_picture(buffer, displayWidth, displayHeight) == R"(
-...##...##
-..#..#.#..
-..####.###
-..#..#.#..
-..#..#.#..
-..#..#.#..
+..............
+....###.....##
+...#...#...#..
+...#...#...#..
+...#...#...#..
+...#...#...#..
+..#.....#.#...
+..#.....#.#...
+..#.....#.#...
+..#######.####
+..#.....#.#...
+..#.....#.#...
+#.#.....#.#...
+..............
 )");
     }
 }

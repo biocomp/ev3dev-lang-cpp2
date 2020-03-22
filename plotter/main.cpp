@@ -129,6 +129,8 @@ void draw_something(ev3dev::lcd& display) {
 
         d.fill(false);
         rectangle(d, x, 10, 40, 40, true);
+        print_text(d, x + 1, 11, "ABAB", false);
+        print_text(d, x + 41, 11, "ABBAA", true);
         //d.set(0, 0, true);
         //d.set(1, 1, true);
         //d.set(2, 2, true);
@@ -138,7 +140,7 @@ void draw_something(ev3dev::lcd& display) {
 
         backPressed = ev3dev::button::back.pressed ();
         std::this_thread::sleep_for(std::chrono::milliseconds{100});
-        ++x;
+        //++x;
     }
 }
 
