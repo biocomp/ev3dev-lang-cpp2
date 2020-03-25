@@ -8,8 +8,8 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceRoot}/build/plotter_tests/plotter_tests",
-            "args": ["Just l"],
+            "program": "${workspaceRoot}/build/tests/api_tests",
+            "args": ["Device"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
@@ -21,7 +21,8 @@
                     "text": "-enable-pretty-printing",
                     "ignoreFailures": true
                 }
-            ]
+            ]//,
+            //"miDebuggerPath": "/usr/bin/gdb"
         },
         {
             "name": "g++ - Build and debug active file",

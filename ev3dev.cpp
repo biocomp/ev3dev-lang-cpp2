@@ -84,40 +84,22 @@ class lru_cache {
     public:
         lru_cache(size_t size = 3) : _size(size) {}
 
-        // template <typename TMakeValue>
-        // V& get(const K &k, TMakeValue&& makeValue) {
-        //     iterator i = find(k);
-        //     if (i != _items.end()) {
-        //         // Found the key, bring the item to the front.
-        //         _items.splice(_items.begin(), _items, i);
-        //         return i->second;
-        //     } else {
-        //         // If the cache is full, remove oldest items to make room.
-        //         while (_items.size() + 1 > _size) {
-        //             _items.pop_back();
-        //         }
-
-        //         // Insert a new default constructed value for this new key.
-        //         return _items.emplace_back(k, std::forward<TMakeValue>(makeValue)).second;
-        //     }
-        // }
-
         template <typename TMakeValue>
         V& get(const K &k, TMakeValue&& makeValue) {
             iterator i = find(k);
             if (i != _items.end()) {
                 // Found the key, bring the item to the front.
                 _items.splice(_items.begin(), _items, i);
+                return i->second;
             } else {
                 // If the cache is full, remove oldest items to make room.
                 while (_items.size() + 1 > _size) {
                     _items.pop_back();
                 }
+
                 // Insert a new default constructed value for this new key.
-                _items.emplace_back(k, std::forward<TMakeValue>(makeValue)).second;
+                return _items.emplace_front(k, std::forward<TMakeValue>(makeValue)).second;
             }
-            // The new item is the most recently used.
-            return _items.front().second;
         }
 
         void clear() {
