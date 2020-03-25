@@ -15,6 +15,21 @@ namespace {
         std::size_t size_;
     };
 
+    template <typename T>
+    struct arr{
+        template <std::size_t N>
+        constexpr arr(const T (&array)[N]) noexcept : ptr_{array}, size_{N - 1} {}
+        constexpr const T& operator[](std::uint32_t i) const noexcept { return ptr_[i]; }
+
+        constexpr const T* begin() noexcept { return ptr_; }
+        constexpr const T* end() noexcept { return ptr_ + size_; }
+
+        constexpr std::size_t size() const noexcept { return size_; }
+    private:
+        const T* ptr_;
+        std::size_t size_;
+    };
+
 
     struct point {
         std::uint8_t x;
@@ -45,27 +60,8 @@ namespace {
         point bottomRight;
         std::uint8_t advance;
         point origin;
-        static_vector<point, 256> glyph_path;
+        static_vector<point, 40> glyph_path;
     };
-
-    // template <typename... TChar>
-    // constexpr int find(arr_of_chars glyph, TChar... chars) {
-    //     auto hasOneOfChars{[chars...](char c) {
-    //         int found = 0;
-    //         auto check{[&found, c](char compareWith) { found += (compareWith == c); }};
-    //         std::initializer_list<int> dummy{ (check(chars),0)... };
-    //         (void)dummy;
-    //         return found != 0;
-    //     }};
-
-    //     for (auto cp = glyph.begin(); cp != glyph.end(); ++cp) {
-    //         if (hasOneOfChars(*cp)) {
-    //             return static_castscp - glyph.begin();
-    //         }
-    //     }
-
-    //     return -1;
-    // }
 
     constexpr void ensure(bool condition) {
         if (!condition) {
@@ -90,7 +86,7 @@ namespace {
         const auto emptyPixel{[](char p) { return p == ' ' || p == '.'; }};
         const auto originPixel{[](char p) { return p == '.' || p == '*'; }};
 
-        static_vector<point, 256> path{};
+        decltype(parsed_glyph::glyph_path) path{};
 
         for (std::uint8_t line = 0; line != glyphHeight; ++line) {
             for (std::uint8_t col = 0; col != glyphWidth; ++col) {
@@ -133,32 +129,48 @@ namespace {
         return { {x[0], y[0]}, {x[1], y[1]}, advance, {originXy[0], originXy[1]}, path };
     }
 
-    // static_assert(find("blah", 'a') == 2, "find(\"blah\", 'a') == 2");
-    // static_assert(find("blah", 'b', 'a') == 0, "find(\"blah\", 'b', 'a') == 1");
-    // static_assert(find("blah", '!') == -1, "find(\"blah\", '!') == -1");
+    namespace test
+    {
+        constexpr char test_char[] =
+            "  ###  "
+            " #   # "
+            " #   # "
+            ". ####."
+            "     # "
+            "     # "
+            "     ##";
 
-    constexpr char test_char[] =
-        "  ###  "
-        " #   # "
-        " #   # "
-        ". ####."
-        "     # "
-        "     # "
-        "     ##";
+        constexpr auto parse_glyph_test = parse_glyph(7, test_char);
 
+        static_assert(parse_glyph_test.topLeft.x == 1, "topLeft.x");
+        static_assert(parse_glyph_test.topLeft.y == 0, "topLeft.y");
+        static_assert(parse_glyph_test.bottomRight.x == 6, "bottomRight.x");
+        static_assert(parse_glyph_test.bottomRight.y == 6, "bottomRight.y");
 
+        static_assert(parse_glyph_test.origin.x == 0, "origin.x");
+        static_assert(parse_glyph_test.origin.y == 3, "origin.y");
 
-    constexpr auto parse_glyph_test = parse_glyph(7, test_char);
+        static_assert(parse_glyph_test.advance == 7, "advance");
+    }
 
-    static_assert(parse_glyph_test.topLeft.x == 1, "topLeft.x");
-    static_assert(parse_glyph_test.topLeft.y == 0, "topLeft.y");
-    static_assert(parse_glyph_test.bottomRight.x == 6, "bottomRight.x");
-    static_assert(parse_glyph_test.bottomRight.y == 6, "bottomRight.y");
+    namespace test2
+    {
+        constexpr char test_char2[] =
+            " # "
+            ".#.";
 
-    static_assert(parse_glyph_test.origin.x == 0, "origin.x");
-    static_assert(parse_glyph_test.origin.y == 3, "origin.y");
-
-    static_assert(parse_glyph_test.advance == 7, "advance");
+        constexpr auto parse_glyph_test2 = parse_glyph(3, test_char2);
+        static_assert(parse_glyph_test2.topLeft.x == 1, "toplLeft2.x");
+        static_assert(parse_glyph_test2.topLeft.y == 0, "toplLeft2.y");
+        static_assert(parse_glyph_test2.bottomRight.x == 1, "bottomRight2.x");
+        static_assert(parse_glyph_test2.bottomRight.y == 1, "bottomRight2.y");
+        static_assert(parse_glyph_test2.advance == 3, "advance2");
+        static_assert(parse_glyph_test2.glyph_path[0].x == 1, "path2[0].x");
+        static_assert(parse_glyph_test2.glyph_path[0].y == 0, "path2[0].y");
+        static_assert(parse_glyph_test2.glyph_path[1].x == 1, "path2[1].x");
+        static_assert(parse_glyph_test2.glyph_path[1].y == 1, "path2[1].y");
+        static_assert(parse_glyph_test2.glyph_path.size() == 2, "path2.size()");
+        } // namespace test2
 
     struct ch{
         constexpr ch(std::uint8_t glyphWidth, arr_of_chars glyph) noexcept : glyph_{parse_glyph(glyphWidth, glyph)} {}
@@ -250,7 +262,754 @@ namespace {
         ".#######."
     }};
 
-    constexpr ch chars_[] = {A,B,C,D,E};
+    constexpr ch F{9,{
+        " ####### "
+        " #       "
+        " #       "
+        " #       "
+        " #       "
+        " #       "
+        " ####    "
+        " #       "
+        " #       "
+        " #       "
+        " #       "
+        ".#      ."
+    }};
+
+    constexpr ch G{10,{
+        "  #####   "
+        " #     #  "
+        " #      # "
+        "#         "
+        "#         "
+        "#         "
+        "#         "
+        "#     ### "
+        "#       # "
+        " #      # "
+        " #     #  "
+        ". #####  ."
+    }};
+
+    constexpr ch H{9,{
+        " #     # "
+        " #     # "
+        " #     # "
+        " #     # "
+        " #     # "
+        " #     # "
+        " ####### "
+        " #     # "
+        " #     # "
+        " #     # "
+        " #     # "
+        ".#     #."
+    }};
+
+    constexpr ch I{5,{
+        " ### "
+        "  #  "
+        "  #  "
+        "  #  "
+        "  #  "
+        "  #  "
+        "  #  "
+        "  #  "
+        "  #  "
+        "  #  "
+        "  #  "
+        ".###."
+    }};
+
+    constexpr ch J{8,{
+        "      # "
+        "      # "
+        "      # "
+        "      # "
+        "      # "
+        "      # "
+        "      # "
+        "      # "
+        "      # "
+        "#    #  "
+        "#    #  "
+        ".####  ."
+    }};
+
+    constexpr ch K{9,{
+        " #     # "
+        " #     # "
+        " #    #  "
+        " #    #  "
+        " #   #   "
+        " #   #   "
+        " ####    "
+        " #   #   "
+        " #   #   "
+        " #    #  "
+        " #    #  "
+        ".#     #."
+    }};
+
+    constexpr ch L{9,{
+        " #       "
+        " #       "
+        " #       "
+        " #       "
+        " #       "
+        " #       "
+        " #       "
+        " #       "
+        " #       "
+        " #       "
+        " #       "
+        ".#######."
+    }};
+
+    constexpr ch M{11,{
+        " #       # "
+        " ##     ## "
+        " # #   # # "
+        " # #   # # "
+        " # #   # # "
+        " #  # #  # "
+        " #   #   # "
+        " #       # "
+        " #       # "
+        " #       # "
+        " #       # "
+        ".#       #."
+    }};
+
+    constexpr ch N{9,{
+        " #     # "
+        " ##    # "
+        " ##    # "
+        " # #   # "
+        " # #   # "
+        " #  #  # "
+        " #  #  # "
+        " #   # # "
+        " #   # # "
+        " #    ## "
+        " #    ## "
+        ".#     #."
+    }};
+
+    constexpr ch O{12,{
+        "     ##     "
+        "   ##  ##   "
+        "  #      #  "
+        "  #      #  "
+        " #        # "
+        " #        # "
+        " #        # "
+        " #        # "
+        "  #      #  "
+        "  #      #  "
+        "   ##  ##   "
+        ".    ##    ."
+    }};
+
+    constexpr ch P{9,{
+        " #####   "
+        " #    #  "
+        " #     # "
+        " #     # "
+        " #     # "
+        " #    #  "
+        " #####   "
+        " #       "
+        " #       "
+        " #       "
+        " #       "
+        ".#      ."
+    }};
+
+    constexpr ch Q{12,{
+        "     ##     "
+        "   ##  ##   "
+        "  #      #  "
+        "  #      #  "
+        " #        # "
+        " #        # "
+        " #        # "
+        " #        # "
+        "  #    # #  "
+        "  #     ##  "
+        "   ##  ###  "
+        ".    ##   #."
+    }};
+
+    constexpr ch R{9,{
+        " #####   "
+        " #    #  "
+        " #     # "
+        " #     # "
+        " #     # "
+        " #    #  "
+        " #####   "
+        " #  #    "
+        " #   #   "
+        " #    #  "
+        " #     # "
+        ".#     #."
+    }};
+
+    constexpr ch S{10,{
+        "   #####  "
+        "  #     # "
+        " #        "
+        " #        "
+        "  #       "
+        "   ####   "
+        "       #  "
+        "        # "
+        "        # "
+        "        # "
+        " #     #  "
+        ". #####  ."
+    }};
+
+    constexpr ch T{9,{
+        " ####### "
+        "    #    "
+        "    #    "
+        "    #    "
+        "    #    "
+        "    #    "
+        "    #    "
+        "    #    "
+        "    #    "
+        "    #    "
+        "    #    "
+        ".   #   ."
+    }};
+
+    constexpr ch U{9,{
+        " #     # "
+        " #     # "
+        " #     # "
+        " #     # "
+        " #     # "
+        " #     # "
+        " #     # "
+        " #     # "
+        " #     # "
+        " #     # "
+        "  #   #  "
+        ".  ###  ."
+    }};
+
+    constexpr ch V{11,{
+        " #       # "
+        " #       # "
+        " #       # "
+        "  #     #  "
+        "  #     #  "
+        "  #     #  "
+        "   #   #   "
+        "   #   #   "
+        "   #   #   "
+        "    # #    "
+        "    # #    "
+        ".    #    ."
+    }};
+
+    constexpr ch W{11,{
+        " #       # "
+        " #       # "
+        " #       # "
+        " #   #   # "
+        " #   #   # "
+        "  #  #  #  "
+        "  #  #  #  "
+        "  # # # #  "
+        "  # # # #  "
+        "  # # # #  "
+        "  # # # #  "
+        ".  #   #  ."
+    }};
+
+    constexpr ch X{9,{
+        " #     # "
+        "  #   #  "
+        "  #   #  "
+        "   # #   "
+        "   # #   "
+        "    #    "
+        "    #    "
+        "   # #   "
+        "   # #   "
+        "  #   #  "
+        "  #   #  "
+        ".#     #."
+    }};
+
+    constexpr ch Y{9,{
+        " #     # "
+        " #     # "
+        " #     # "
+        "  #   #  "
+        "  #   #  "
+        "   # #   "
+        "   # #   "
+        "    #    "
+        "    #    "
+        "   #     "
+        "   #     "
+        ".#      ."
+    }};
+
+    constexpr ch Z{9,{
+        " ####### "
+        "       # "
+        "      #  "
+        "      #  "
+        "     #   "
+        "    #    "
+        "    #    "
+        "   #     "
+        "  #      "
+        "  #      "
+        " #       "
+        ".#######."
+    }};
+
+    constexpr ch open_sq_bracket{5,{
+        " ### "
+        " #   "
+        " #   "
+        " #   "
+        " #   "
+        " #   "
+        " #   "
+        " #   "
+        " #   "
+        " #   "
+        " #   "
+        " #   "
+        ".#  ."
+        " #   "
+        " ### "
+    }};
+
+    constexpr ch backslash{7,{
+        " #     "
+        " #     "
+        " #     "
+        "  #    "
+        "  #    "
+        "  #    "
+        "   #   "
+        "   #   "
+        "   #   "
+        "    #  "
+        "    #  "
+        "    #  "
+        ".    #."
+        "     # "
+    }};
+
+    constexpr ch close_sq_bracket{5,{
+        " ### "
+        "   # "
+        "   # "
+        "   # "
+        "   # "
+        "   # "
+        "   # "
+        "   # "
+        "   # "
+        "   # "
+        "   # "
+        "   # "
+        ".  #."
+        "   # "
+        " ### "
+    }};
+
+    constexpr ch caret{9,{
+        "    #    "
+        "   # #   "
+        "   # #   "
+        "  #   #  "
+        "  #   #  "
+        " #     # "
+        " #     # "
+        "         "
+        "         "
+        "         "
+        "         "
+        ".       ."
+    }};
+
+    constexpr ch underline{9,{
+        ".       ."
+        "         "
+        " ####### "
+    }};
+
+    constexpr ch grave_accent{5,{
+        " #   "
+        " #   "
+        "  #  "
+        "   # "
+        "     "
+        "     "
+        "     "
+        "     "
+        "     "
+        "     "
+        "     "
+        "     "
+        ".   ."
+    }};
+
+    constexpr ch a{8,{
+        "  ##### "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        ". #### *"
+    }};
+
+    constexpr ch b{8,{
+        " #      "
+        " #      "
+        " #      "
+        " #      "
+        " #####  "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        ".##### ."
+    }};
+
+    constexpr ch c{8,{
+        "   ###  "
+        "  #   # "
+        " #      "
+        " #      "
+        " #      "
+        " #      "
+        "  #   # "
+        ".  ### ."
+    }};
+
+    constexpr ch d{8,{
+        "      # "
+        "      # "
+        "      # "
+        "      # "
+        "  ##### "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        ". #### *"
+    }};
+
+    constexpr ch e{8,{
+        "   ###  "
+        "  #   # "
+        " #    # "
+        " #    # "
+        " #####  "
+        " #      "
+        "  #   # "
+        ".  ### ."
+    }};
+
+    constexpr ch f{7,{
+        "  ###  "
+        " #   # "
+        " #   # "
+        " #     "
+        "###    "
+        " #     "
+        " #     "
+        " #     "
+        " #     "
+        " #     "
+        " #     "
+        ".#    ."
+    }};
+
+    constexpr ch g{8,{
+        "  ####  "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        "  ####  "
+        " #      "
+        ".##    ."
+        "  ####  "
+        " #    # "
+        " #    # "
+        "  ####  "
+    }};
+
+    constexpr ch h{8,{
+        " #      "
+        " #      "
+        " #      "
+        " #      "
+        " #####  "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        ".#    #."
+    }};
+
+    constexpr ch i{4,{
+        " #  "
+        "    "
+        " #  "
+        " #  "
+        " #  "
+        " #  "
+        " #  "
+        " #  "
+        " #  "
+        ". #."
+    }};
+
+    constexpr ch j{7,{
+        "     # "
+        "       "
+        "     # "
+        "     # "
+        "     # "
+        "     # "
+        "     # "
+        "     # "
+        "     # "
+        "     # "
+        "     # "
+        "     # "
+        "     # "
+        " #  #  "
+        ". ##  ."
+    }};
+
+    constexpr ch k{8,{
+        " #      "
+        " #      "
+        " #      "
+        " #      "
+        " #    # "
+        " #   #  "
+        " #  #   "
+        " ###    "
+        " #  #   "
+        " #   #  "
+        " #    # "
+        ".#    #."
+    }};
+
+    constexpr ch l{4,{
+        " #  "
+        " #  "
+        " #  "
+        " #  "
+        " #  "
+        " #  "
+        " #  "
+        " #  "
+        " #  "
+        " #  "
+        " #  "
+        ".# ."
+    }};
+
+    constexpr ch m{9,{
+        " # # ##  "
+        " ## #  # "
+        " #  #  # "
+        " #  #  # "
+        " #  #  # "
+        " #  #  # "
+        " #  #  # "
+        ".#  #  #."
+    }};
+
+    constexpr ch n{8,{
+        " #####  "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        ".#    #."
+    }};
+
+    constexpr ch o{9,{
+        "   ###   "
+        "  #   #  "
+        " #     # "
+        " #     # "
+        " #     # "
+        " #     # "
+        "  #   #  "
+        ".  ###  ."
+    }};
+
+    constexpr ch p{8,{
+        " # ###  "
+        " ##   # "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        " ##   # "
+        ".# ### ."
+        " #      "
+        " #      "
+        " #      "
+        " #      "
+    }};
+
+    constexpr ch q{8,{
+        "  ### # "
+        " #   ## "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #   ## "
+        ". ### #."
+        "      # "
+        "      # "
+        "      ##"
+        "      # "
+    }};
+
+    constexpr ch r{8,{
+        " # ###  "
+        " ##   # "
+        " #      "
+        " #      "
+        " #      "
+        " #      "
+        " #      "
+        ".#     ."
+    }};
+
+    constexpr ch s{8,{
+        "  ##### "
+        " #      "
+        " #      "
+        "  ####  "
+        "      # "
+        "      # "
+        "      # "
+        ".##### ."
+    }};
+
+    constexpr ch t{8,{
+        "   #    "
+        "   #    "
+        "   #    "
+        "   #    "
+        " #####  "
+        "   #    "
+        "   #    "
+        "   #    "
+        "   #    "
+        "   #    "
+        "   #    "
+        ".   ## ."
+    }};
+
+    constexpr ch u{8,{
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        " #    # "
+        ". #### ."
+    }};
+
+    constexpr ch v{9,{
+        " #     # "
+        " #     # "
+        "  #   #  "
+        "  #   #  "
+        "   # #   "
+        "   # #   "
+        "    #    "
+        ".   #   ."
+    }};
+
+    constexpr ch w{9,{
+        " #     # "
+        " #     # "
+        " #     # "
+        "  # # #  "
+        "  # # #  "
+        "  # # #  "
+        "   # #   "
+        ".  # #  ."
+    }};
+
+    constexpr ch x{7,{
+        " #   # "
+        " #   # "
+        "  # #  "
+        "   #   "
+        "  # #  "
+        "  # #  "
+        " #   # "
+        ".#   #."
+    }};
+
+    constexpr ch y{9,{
+        " #     # "
+        " #     # "
+        "  #    # "
+        "  #    # "
+        "   #  #  "
+        "   #  #  "
+        "    # #  "
+        ".    # . "
+        "     #   "
+        "     #   "
+        " #  #    "
+        "  ##     "
+    }};
+
+    constexpr ch z{8,{
+        " ###### "
+        "      # "
+        "     #  "
+        "    #   "
+        "   #    "
+        "  #     "
+        " #      "
+        ".######."
+    }};
+
+    constexpr ch chars_[] = {
+        A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z,
+        open_sq_bracket,backslash,close_sq_bracket,caret,underline,grave_accent,
+        a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z};
 }
 
 void ev3plotter::print_text(ev3plotter::Display& d, std::uint32_t xpos, std::uint32_t ypos, std::string_view text, bool color) {

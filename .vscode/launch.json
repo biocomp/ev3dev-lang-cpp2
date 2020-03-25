@@ -9,7 +9,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceRoot}/build/plotter_tests/plotter_tests",
-            "args": ["* with some overflow"],
+            "args": ["Just l"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
