@@ -1541,7 +1541,11 @@ const auto& find_ch(char c) {
     return chars_['?' - ' '];
 }
 
-void ev3plotter::print_text(ev3plotter::Display& d, std::uint32_t xpos, std::uint32_t ypos, std::string_view text, bool color) {
+void ev3plotter::print_text(ev3plotter::display& d, point where, std::string_view text, bool color) {
+    print_text(d, where, {{0, 0}, {d.width, d.height}}, text, color);
+}
+
+void ev3plotter::print_text(ev3plotter::display& d, point where, rect crop, std::string_view text, bool color) {
     for (auto c : text) {
         const auto& found_ch = find_ch(c);
         const auto& glyph = found_ch.glyph();
@@ -1549,17 +1553,12 @@ void ev3plotter::print_text(ev3plotter::Display& d, std::uint32_t xpos, std::uin
         const auto xoffset_from_origin = glyph.origin.x - static_cast<int>(glyph.topLeft.x);
         const auto yoffset_from_origin = -(glyph.origin.y - static_cast<int>(glyph.topLeft.y));
 
-        const auto curr_x_offset = static_cast<int>(xpos) + xoffset_from_origin;
-        const auto curr_y_offset = static_cast<int>(ypos) + yoffset_from_origin;
+        const auto curr_x_offset = where.x + xoffset_from_origin;
+        const auto curr_y_offset = where.y + yoffset_from_origin;
         for (auto&& p : found_ch.glyph().glyph_path) {
-            const auto x = curr_x_offset + p.x;
-            const auto y = curr_y_offset + p.y;
-
-            if (x >= 0 && y >= 0 && x < static_cast<int>(d.width) && y < static_cast<int>(d.height)) {
-                d.set(static_cast<std::uint32_t>(x), static_cast<std::uint32_t>(y), color);
-            }
+            d.set({curr_x_offset + p.x,  curr_y_offset + p.y}, crop, color);
         }
 
-        xpos += static_cast<std::uint32_t>(glyph.advance);
+        where.x += glyph.advance;
     }
 }

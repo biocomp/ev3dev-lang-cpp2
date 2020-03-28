@@ -3,12 +3,13 @@ cmake_minimum_required(VERSION 3.1)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(CMAKE_EXE_LINKER_FLAGS "-static")
-
 project(ev3dev-lang-cpp)
+include(cmake/StandardProjectSettings.cmake)
 
 add_library(project_options INTERFACE)
-include(cmake/StandardProjectSettings.cmake)
+
+include(cmake/Sanitizers.cmake)
+enable_sanitizers(project_options)
 
 # Link this 'library' to use the warnings specified in CompilerWarnings.cmake
 add_library(project_warnings INTERFACE)

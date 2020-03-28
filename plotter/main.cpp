@@ -18,8 +18,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#include <menu.h>
-#include <display.h>
+#include "menu.h"
+#include "display.h"
 
 using namespace ev3plotter;
 #include <thread>
@@ -100,7 +100,7 @@ bool verify_device(const ev3dev::lcd& display) {
     if (display.bits_per_pixel() != 1)
     {
         //std::cout << "########\n";
-        //std::cout << "Display does not have 1 bits per pixel! It has " << display.bits_per_pixel() << ". Failing..." << std::endl;
+        //std::cout << "display does not have 1 bits per pixel! It has " << display.bits_per_pixel() << ". Failing..." << std::endl;
         //wait_for_back_press();
         //return false;
     }
@@ -109,10 +109,10 @@ bool verify_device(const ev3dev::lcd& display) {
 }
 
 
-void draw_something(ev3dev::lcd& display) {
-    auto* buffer = display.frame_buffer();
+void draw_something(ev3dev::lcd& lcd) {
+    auto* buffer = lcd.frame_buffer();
 
-    Display d{buffer, display.resolution_x(), display.resolution_y()};
+    display d{buffer, static_cast<int>(lcd.resolution_x()), static_cast<int>(lcd.resolution_y())};
 
     // std::this_thread::sleep_for(std::chrono::seconds{2});
     // display.fill(0xff);
@@ -120,7 +120,7 @@ void draw_something(ev3dev::lcd& display) {
 
 
     bool backPressed{false};
-    std::uint32_t x = 0;
+    int x = 0;
     while (!backPressed)
     {
         if ((x + 40) >= d.width) {
@@ -128,9 +128,9 @@ void draw_something(ev3dev::lcd& display) {
         }
 
         d.fill(false);
-        rectangle(d, x, 10, 40, 40, true);
-        print_text(d, x + 1, 11, "ABAB", false);
-        print_text(d, x + 41, 11, "ABBAA", true);
+        rectangle(d, {{x, 10}, {x + 40, 10 + 40}}, true);
+        print_text(d, {x + 1, 11}, "ABAB", false);
+        print_text(d, {x + 41, 11}, "ABBAA", true);
         //d.set(0, 0, true);
         //d.set(1, 1, true);
         //d.set(2, 2, true);

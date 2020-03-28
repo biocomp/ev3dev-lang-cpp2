@@ -1,0 +1,45 @@
+{
+    "buildType": {
+        "default": "debug",
+        "choices": {
+            "debug": {
+                "short": "Debug",
+                "long": "Emit debug information",
+                "buildType": "Debug"
+            },
+            "release_deb_info": {
+                "short": "RelWithDebInfo",
+                "long": "Optimize generated code",
+                "buildType": "RelWithDebInfo"
+            },
+            "release": {
+                "short": "Release",
+                "long": "Optimize generated code",
+                "buildType": "Release"
+            }
+        }
+    },
+
+    "sanitize": {
+        "default": "dont_sanitize",
+        "choices": {
+            "do_sanitize": {
+                "short": "Sanitize",
+                "long": "Instrument with Address Sanitizer",
+                "settings": {
+                    "ENABLE_SANITIZER_ADDRESS": "yes",
+                    "ENABLE_SANITIZER_UNDEFINED_BEHAVIOR": "yes"
+                },
+                "linkage": "shared"
+            },
+            "dont_sanitize": {
+                "short": "Don't sanitize",
+                "long": "Not using Address Sanitizer",
+                "linkage": "static",
+                "settings": {
+                    "CMAKE_EXE_LINKER_FLAGS": "-static"
+                }
+            }
+        }
+    }
+}
