@@ -1,9 +1,14 @@
 add_executable(api_tests api_tests.cpp)
 
-target_link_libraries(api_tests PRIVATE ev3dev project_options project_warnings)
+target_link_libraries(api_tests PRIVATE ev3dev project_options project_warnings catch_main)
 
-target_compile_definitions(api_tests PRIVATE
-    SYS_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/fake-sys/arena"
-    FAKE_SYS="${CMAKE_CURRENT_SOURCE_DIR}/fake-sys")
+include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/Catch.cmake)
 
-add_test(api_tests api_tests)
+catch_discover_tests(
+    api_tests
+    TEST_PREFIX
+    "api_tests."
+    EXTRA_ARGS
+    -s
+    --reporter=xml
+    --out=plotter_tests.xml)

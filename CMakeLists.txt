@@ -34,6 +34,7 @@ function(add_ev3_executable target sources)
 endfunction()
 
 enable_testing()
+add_subdirectory(third_party/catch)
 add_subdirectory(tests)
 add_subdirectory(plotter)
 add_subdirectory(plotter_tests)

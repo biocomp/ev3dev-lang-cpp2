@@ -1541,11 +1541,11 @@ const auto& find_ch(char c) {
     return chars_['?' - ' '];
 }
 
-void ev3plotter::print_text(ev3plotter::display& d, point where, std::string_view text, bool color) {
+void ev3plotter::print_text(ev3plotter::display& d, point where, std::string_view text, bool color) noexcept {
     print_text(d, where, {{0, 0}, {d.width, d.height}}, text, color);
 }
 
-void ev3plotter::print_text(ev3plotter::display& d, point where, rect crop, std::string_view text, bool color) {
+void ev3plotter::print_text(ev3plotter::display& d, point where, rect crop, std::string_view text, bool color) noexcept {
     for (auto c : text) {
         const auto& found_ch = find_ch(c);
         const auto& glyph = found_ch.glyph();
@@ -1560,5 +1560,54 @@ void ev3plotter::print_text(ev3plotter::display& d, point where, rect crop, std:
         }
 
         where.x += glyph.advance;
+    }
+}
+
+
+void ev3plotter::fill(display& d, rect points, bool color) noexcept {
+    const rect cropped{
+        std::clamp(points.topLeft.x, 0, d.width),
+        std::clamp(points.topLeft.y, 0, d.height),
+        std::clamp(points.bottomRight.x + 1, 0, d.width),
+        std::clamp(points.bottomRight.y + 1, 0, d.height)};
+
+    for (auto px = cropped.topLeft.x; px != cropped.bottomRight.x; ++px) {
+        for (auto py = cropped.topLeft.y; py != cropped.bottomRight.y; ++py) {
+            d.set({px, py}, color);
+        }
+    }
+}
+
+void ev3plotter::hline(display& d, point p, int length, bool color) noexcept {
+    assert(length > 0);
+    const auto start = std::clamp(p.x, 0, d.width);
+    const auto stop = std::clamp(p.x + length, 0, d.width);
+    for (auto px = start; px != stop; ++px) {
+        d.set({px, p.y}, color);
+    }
+}
+
+void ev3plotter::vline(display& d, point p, int length, bool color) noexcept {
+    assert(length > 0);
+    const auto start = std::clamp(p.y, 0, d.height);
+    const auto stop = std::clamp(p.y + length, 0, d.height);
+    for (auto py = start; py != stop; ++py) {
+        d.set({p.x, py}, color);
+    }
+}
+
+void ev3plotter::rectangle(display& d, rect points, bool color) noexcept {
+    const auto w = width(points);
+    const auto h = height(points);
+    assert(w >= 0);
+    assert(h >= 0);
+
+    hline(d, points.topLeft, w, color);
+    hline(d, {points.topLeft.x, points.bottomRight.y}, w, color);
+
+    if (h > 2)
+    {
+        vline(d, {points.topLeft.x, points.topLeft.y + 1}, h - 2, color);
+        vline(d, {points.bottomRight.x, points.topLeft.y + 1}, h - 2, color);
     }
 }

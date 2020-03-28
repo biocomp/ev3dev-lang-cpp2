@@ -9,7 +9,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceRoot}/build/plotter_tests/plotter_tests",
-            "args": ["Rectangle"],
+            "args": ["Rectangle tests", "-c", "Beyond y"],
             //"args": ["set() method tests"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

@@ -230,6 +230,15 @@ TEST_CASE_METHOD(TenBySixDisplay, "set() method tests") {
     }
 }
 
+
+const char* c_emptySmall = R"(
+...
+...
+...
+)";
+
+using SmallDisplay = MockDispay<3, 3>;
+
 TEST_CASE("Rectangle tests") {
     TenBySixDisplay d{};
 
@@ -244,10 +253,82 @@ TEST_CASE("Rectangle tests") {
 ##########
 )");
     }
+
+    SECTION("Beyond x") {
+        rectangle(d.d, {{-1, 0}, {d.displayWidth, d.displayHeight - 1}}, true);
+        REQUIRE(get_picture(d) == R"(
+##########
+..........
+..........
+..........
+..........
+##########
+)");
+    }
+
+    SECTION("Beyond y") {
+        rectangle(d.d, {{0, -10}, {d.displayWidth - 1, d.displayHeight + 10}}, true);
+        REQUIRE(get_picture(d) == R"(
+#........#
+#........#
+#........#
+#........#
+#........#
+#........#
+)");
+    }
+
+    SECTION("2x2") {
+        rectangle(d.d, {{1, 1}, {2, 2}}, true);
+        REQUIRE(get_picture(d) == R"(
+..........
+.##.......
+.##.......
+..........
+..........
+..........
+)");
+    }
+
+    SECTION("1x1") {
+        rectangle(d.d, {{1, 1}, {1, 1}}, true);
+        REQUIRE(get_picture(d) == R"(
+..........
+.#........
+..........
+..........
+..........
+..........
+)");
+    }
+
+    SmallDisplay smallDisplay;
+    SECTION("Off the screen completely") {
+        SECTION("Off -x") {
+            rectangle(smallDisplay.d, {{-10, 0}, {-2, 1}}, true);
+            REQUIRE(get_picture(smallDisplay) == c_emptySmall);
+        }
+
+        SECTION("Off -y") {
+            rectangle(smallDisplay.d, {{0, -10}, {0, -1}}, true);
+            REQUIRE(get_picture(smallDisplay) == c_emptySmall);
+        }
+
+        SECTION("Off +x") {
+            rectangle(smallDisplay.d, {{10, 0}, {20, 1}}, true);
+            REQUIRE(get_picture(smallDisplay) == c_emptySmall);
+        }
+
+        SECTION("Off +y") {
+            rectangle(smallDisplay.d, {{0, 10}, {0, 20}}, true);
+            REQUIRE(get_picture(smallDisplay) == c_emptySmall);
+        }
+    }
 }
 
 TEST_CASE("Fill") {
     TenBySixDisplay d{};
+    MockDispay<3, 3> smallDisplay{};
 
     SECTION("Full fill") {
         fill(d.d, {{0, 0}, {d.displayWidth-1, d.displayHeight-1}}, true);
@@ -312,6 +393,28 @@ TEST_CASE("Fill") {
 .########.
 )");
     }
+
+    SECTION("Off the screen completely") {
+        SECTION("Off -x") {
+            fill(smallDisplay.d, {{-10, 0}, {-2, 1}}, true);
+            REQUIRE(get_picture(smallDisplay) == c_emptySmall);
+        }
+
+        SECTION("Off -y") {
+            fill(smallDisplay.d, {{0, -10}, {0, -1}}, true);
+            REQUIRE(get_picture(smallDisplay) == c_emptySmall);
+        }
+
+        SECTION("Off +x") {
+            fill(smallDisplay.d, {{10, 0}, {20, 1}}, true);
+            REQUIRE(get_picture(smallDisplay) == c_emptySmall);
+        }
+
+        SECTION("Off +y") {
+            fill(smallDisplay.d, {{0, 10}, {0, 20}}, true);
+            REQUIRE(get_picture(smallDisplay) == c_emptySmall);
+        }
+    }
 }
 
 TEST_CASE("Lines") {
@@ -368,17 +471,27 @@ TEST_CASE("Lines") {
 )");
     }
 
-    SECTION("Vertical line outside the screen - not visible") {
-        vline(d.d, {-1, -1}, 400, true);
+    SmallDisplay smallDisplay;
+    SECTION("Off the screen completely") {
+        SECTION("hline Off -x") {
+            hline(smallDisplay.d, {-10, 0}, 5, true);
+            REQUIRE(get_picture(smallDisplay) == c_emptySmall);
+        }
 
-        REQUIRE(get_picture(d) == R"(
-..........
-..........
-..........
-..........
-..........
-..........
-)");
+        SECTION("vline Off -y") {
+            vline(smallDisplay.d, {0, -10}, 5, true);
+            REQUIRE(get_picture(smallDisplay) == c_emptySmall);
+        }
+
+        SECTION("hline Off +x") {
+            hline(smallDisplay.d, {10, 0}, 5, true);
+            REQUIRE(get_picture(smallDisplay) == c_emptySmall);
+        }
+
+        SECTION("vline Off +y") {
+            vline(smallDisplay.d, {0, 10}, 5, true);
+            REQUIRE(get_picture(smallDisplay) == c_emptySmall);
+        }
     }
 }
 
@@ -695,8 +808,8 @@ TEST_CASE_METHOD((MockDispay<29, 16>), "Chars can be cropped to any size") {
 .............................
 .............................
 ...#....#....#....##.........
-...#....#....#...#..#........
-...#....#....#...#...#.......
+...#....#....#...#..#...#....
+...#....#....#...#...#..#....
 ...#....#....#........##.....
 ...#....#....#...............
 ........#.....#..............
@@ -704,7 +817,7 @@ TEST_CASE_METHOD((MockDispay<29, 16>), "Chars can be cropped to any size") {
 ...#....#....#...............
 ...#....#....#...............
 ...#....#....#...............
-.............................
+...#....#....#...............
 .............................
 .............................
 )");

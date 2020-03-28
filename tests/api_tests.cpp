@@ -1,5 +1,5 @@
-#define CATCH_CONFIG_MAIN
-#include "catch.hpp"
+#include <catch2.hpp>
+
 #include <vector>
 #include <sstream>
 #include <cstdlib>
