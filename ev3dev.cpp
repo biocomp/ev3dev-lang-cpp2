@@ -123,16 +123,25 @@ file_istream& ifstream_cache(const std::string &path, const ISystem& sys) {
     static lru_cache<std::string, std::unique_ptr<file_istream>> cache(FSTREAM_CACHE_SIZE);
     static std::mutex mx;
 
+    std::cout << "#Cache: Opening for reading: '" << path << "'..." << std::endl;
+
     std::lock_guard<std::mutex> lock(mx);
-    return *cache.get(path, [&sys](const auto &path) { return sys.OpenForRead(path); });
+    auto& stream = *cache.get(path, [&sys](const auto &path) { return sys.OpenForRead(path); });
+    stream.prepare(path);
+    return stream;
 }
 
 file_ostream& ofstream_cache(const std::string &path, const ISystem& sys) {
     static lru_cache<std::string, std::unique_ptr<file_ostream>> cache(FSTREAM_CACHE_SIZE);
     static std::mutex mx;
 
+    std::cout << "#Cache: Opening for writing: '" << path << "'..." << std::endl;
+
     std::lock_guard<std::mutex> lock(mx);
-    return *cache.get(path, [&sys](const auto &path) { return sys.OpenForWrite(path); });
+
+    auto& stream = *cache.get(path, [&sys](const auto &path) { return sys.OpenForWrite(path); });
+    stream.prepare(path);
+    return stream;
 }
 
 //-----------------------------------------------------------------------------
@@ -159,6 +168,18 @@ struct file_ofstream : public file_ostream {
     bool is_open() const override { return _stream.is_open(); }
     void close() override { return _stream.close(); }
     void clear() override { return _stream.clear(); }
+    void prepare(const std::string& path) override {
+        if (!_stream.is_open()) {
+            std::cout << "Preparing WRITE closed: '" << path << "'" << std::endl;
+            // Don't buffer writes to avoid latency. Also saves a bit of memory.
+            _stream.rdbuf()->pubsetbuf(NULL, 0);
+            _stream.open(path);
+        } else {
+            std::cout << "Preparing WRITE OPENED: '" << path << "'" << std::endl;
+            // Clear the error bits in case something happened.
+            _stream.clear();
+        }
+    }
 
     std::ofstream _stream;
 };
@@ -169,6 +190,17 @@ struct file_ifstream : public file_istream {
     bool is_open() const override { return _stream.is_open(); }
     void close() override { return _stream.close(); }
     void clear() override { return _stream.clear(); }
+    void prepare(const std::string& path) override {
+        if (!_stream.is_open()) {
+            std::cout << "Preparing read closed: '" << path << "'" << std::endl;
+            _stream.open(path);
+        } else {
+            std::cout << "Preparing read OPENED: '" << path << "'" << std::endl;
+            // Clear the flags bits in case something happened (like reaching EOF).
+            _stream.clear();
+            _stream.seekg(0, std::ios::beg);
+        }
+    }
 
     std::istream& get() override { return _stream; }
     const std::istream& get() const override { return _stream; }
@@ -185,23 +217,25 @@ struct file_ifstream : public file_istream {
 RealSystem::RealSystem() : _sys_root{"/sys/class"} {}
 
 std::unique_ptr<file_ostream> RealSystem::OpenForWrite(const std::string &path) const {
+    std::cout << "## Opening for writing: '" << path << "'..." << std::endl;
     auto file = std::make_unique<file_ofstream>(path);
-    if (!file->_stream.is_open()) {
-        // Don't buffer writes to avoid latency. Also saves a bit of memory.
-        file->_stream.rdbuf()->pubsetbuf(NULL, 0);
-        file->_stream.open(path);
-    }
+    // if (file->_stream.is_open()) {
+    //     // Don't buffer writes to avoid latency. Also saves a bit of memory.
+    //     file->_stream.rdbuf()->pubsetbuf(NULL, 0);
+    //     file->_stream.open(path);
+    // }
     return file;
 }
 
 std::unique_ptr<file_istream> RealSystem::OpenForRead(const std::string &path) const {
+    std::cout << "## Opening for reading: '" << path << "'..." << std::endl;
     auto file = std::make_unique<file_ifstream>(path);
-    file->_stream.open(path);
+    //file->_stream.open(path);
     return file;
 }
 
 void RealSystem::System(const char *command) const {
-    std::system(command);
+    (void)!std::system(command);
 }
 
 const std::string& RealSystem::get_sys_root() const {

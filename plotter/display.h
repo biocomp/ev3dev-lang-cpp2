@@ -31,8 +31,8 @@ namespace ev3plotter
         display(unsigned char* buffer_, int width_, int height_) :
             buffer{buffer_}, width{width_}, height{height_}, m_tempBuffer(static_cast<std::size_t>(width_*height_*4), 0xff)
         {
-            assert(width_ > 0);
-            assert(height_ > 0);
+            assert(width_ >= 0);
+            assert(height_ >= 0);
         }
 
         void set(point p, rect crop, bool val) {

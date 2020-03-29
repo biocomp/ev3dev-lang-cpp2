@@ -98,6 +98,7 @@ class file_istream {
         virtual bool is_open() const = 0;
         virtual void close() = 0;
         virtual void clear() = 0;
+        virtual void prepare(const std::string& path) = 0;
 
         virtual std::istream& get() = 0;
         virtual const std::istream& get() const = 0;
@@ -110,6 +111,7 @@ public:
     virtual bool is_open() const = 0;
     virtual void close() = 0;
     virtual void clear() = 0;
+    virtual void prepare(const std::string &path) = 0;
 
     virtual std::ostream& get() = 0;
     virtual const std::ostream& get() const = 0;

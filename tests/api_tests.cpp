@@ -19,6 +19,7 @@ namespace
             bool is_open() const override { return true; }
             void close() override { }
             void clear() override { }
+            void prepare(const std::string&) override {}
 
             std::ostream& get() override { return _stream; }
             const std::ostream& get() const override { return _stream; }
@@ -35,6 +36,7 @@ namespace
             bool is_open() const override { return true; }
             void close() override {  }
             void clear() override {  }
+            void prepare(const std::string&) override {}
 
             std::istream& get() override { return _stream; }
             const std::istream& get() const override { return _stream; }
