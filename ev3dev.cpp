@@ -123,11 +123,8 @@ file_istream& ifstream_cache(const std::string &path, const ISystem& sys) {
     static lru_cache<std::string, std::unique_ptr<file_istream>> cache(FSTREAM_CACHE_SIZE);
     static std::mutex mx;
 
-    std::cout << "#Cache: Opening for reading: '" << path << "'..." << std::endl;
-
     std::lock_guard<std::mutex> lock(mx);
     auto& stream = *cache.get(path, [&sys](const auto &path) { return sys.OpenForRead(path); });
-    stream.prepare(path);
     return stream;
 }
 
@@ -135,32 +132,28 @@ file_ostream& ofstream_cache(const std::string &path, const ISystem& sys) {
     static lru_cache<std::string, std::unique_ptr<file_ostream>> cache(FSTREAM_CACHE_SIZE);
     static std::mutex mx;
 
-    std::cout << "#Cache: Opening for writing: '" << path << "'..." << std::endl;
-
     std::lock_guard<std::mutex> lock(mx);
 
     auto& stream = *cache.get(path, [&sys](const auto &path) { return sys.OpenForWrite(path); });
-    stream.prepare(path);
     return stream;
 }
 
 //-----------------------------------------------------------------------------
 file_ostream &ofstream_open(const std::string &path, const ISystem& sys) {
     auto &file = ofstream_cache(path, sys);
-    file.get().clear();
+    file.prepare(path);
     return file;
 }
 
 file_istream &ifstream_open(const std::string &path, const ISystem& sys) {
     auto &file = ifstream_cache(path, sys);
     // Clear the flags bits in case something happened (like reaching EOF).
-    file.get().clear();
-    file.get().seekg(0, std::ios::beg);
+    file.prepare(path);
     return file;
 }
 
 struct file_ofstream : public file_ostream {
-    file_ofstream(const std::string& file) : _stream{file} {}
+    file_ofstream(const std::string&) : _stream{} {}
 
     std::ostream& get() override { return _stream; }
     const std::ostream& get() const override { return _stream; }
@@ -170,12 +163,10 @@ struct file_ofstream : public file_ostream {
     void clear() override { return _stream.clear(); }
     void prepare(const std::string& path) override {
         if (!_stream.is_open()) {
-            std::cout << "Preparing WRITE closed: '" << path << "'" << std::endl;
             // Don't buffer writes to avoid latency. Also saves a bit of memory.
             _stream.rdbuf()->pubsetbuf(NULL, 0);
             _stream.open(path);
         } else {
-            std::cout << "Preparing WRITE OPENED: '" << path << "'" << std::endl;
             // Clear the error bits in case something happened.
             _stream.clear();
         }
@@ -185,17 +176,15 @@ struct file_ofstream : public file_ostream {
 };
 
 struct file_ifstream : public file_istream {
-    file_ifstream(const std::string& file) : _stream{file} {}
+    file_ifstream(const std::string&) : _stream{} {}
 
     bool is_open() const override { return _stream.is_open(); }
     void close() override { return _stream.close(); }
     void clear() override { return _stream.clear(); }
     void prepare(const std::string& path) override {
         if (!_stream.is_open()) {
-            std::cout << "Preparing read closed: '" << path << "'" << std::endl;
             _stream.open(path);
         } else {
-            std::cout << "Preparing read OPENED: '" << path << "'" << std::endl;
             // Clear the flags bits in case something happened (like reaching EOF).
             _stream.clear();
             _stream.seekg(0, std::ios::beg);
@@ -217,7 +206,6 @@ struct file_ifstream : public file_istream {
 RealSystem::RealSystem() : _sys_root{"/sys/class"} {}
 
 std::unique_ptr<file_ostream> RealSystem::OpenForWrite(const std::string &path) const {
-    std::cout << "## Opening for writing: '" << path << "'..." << std::endl;
     auto file = std::make_unique<file_ofstream>(path);
     // if (file->_stream.is_open()) {
     //     // Don't buffer writes to avoid latency. Also saves a bit of memory.
@@ -228,7 +216,6 @@ std::unique_ptr<file_ostream> RealSystem::OpenForWrite(const std::string &path) 
 }
 
 std::unique_ptr<file_istream> RealSystem::OpenForRead(const std::string &path) const {
-    std::cout << "## Opening for reading: '" << path << "'..." << std::endl;
     auto file = std::make_unique<file_ifstream>(path);
     //file->_stream.open(path);
     return file;

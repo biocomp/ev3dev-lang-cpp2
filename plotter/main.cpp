@@ -186,6 +186,7 @@ namespace {
             widget_state() = default;
 
         public:
+            virtual bool changed() noexcept = 0;
             virtual bool handle_event(event event) noexcept = 0;
             virtual void draw(ev3plotter::display &d) const noexcept = 0;
             virtual ~widget_state() = default;
@@ -195,10 +196,10 @@ namespace {
         virtual std::unique_ptr<widget_state> make() const noexcept = 0;
     };
 
-    constexpr int c_menuHeaderHeight = 30;
-    constexpr int c_menuItemHeight = 25;
-    constexpr int c_menuPadding = 5;
-    constexpr int c_menuCutoutPadding = 1;
+    constexpr int c_menuHeaderHeight = 25;
+    constexpr int c_menuItemHeight = 20;
+    constexpr int c_menuPadding = 3;
+    constexpr int c_menuCutoutPadding = 0;
     constexpr int c_menuSpaceForMore = 20;
 
     class base_menu_state : public IWidget::widget_state {
@@ -207,6 +208,10 @@ namespace {
         virtual menu_index size() const noexcept = 0;
         virtual void loop_over_elements(menu_index from, menu_index to, std::function<bool(menu_index, std::string_view, has_more)> callback) const noexcept = 0;
         virtual void click(menu_index) const noexcept = 0;
+
+        bool changed() noexcept override {
+            return false;
+        }
 
         bool handle_event(event event) noexcept override {
             switch (event) {
@@ -232,7 +237,7 @@ namespace {
             currentY += c_menuHeaderHeight;
 
             const auto curr_size = size();
-            loop_over_elements(static_cast<menu_index>(0), curr_size, [&](auto i, auto name, auto /*more*/) {
+            loop_over_elements(static_cast<menu_index>(0), curr_size, [&](auto i, auto name, auto more) {
                 if (currentY > d.height)
                 {
                     return false;
@@ -243,6 +248,11 @@ namespace {
 
                 fill(d, {{0, currentY}, {d.width - 1, currentY + c_menuItemHeight}}, backgroundColor);
                 print_text(d, {c_menuPadding, currentY + c_menuItemHeight - c_menuPadding}, {{c_menuCutoutPadding, currentY + c_menuCutoutPadding}, {textEndX - c_menuSpaceForMore, currentY + c_menuItemHeight - c_menuCutoutPadding}}, name, fontColor);
+
+                if (more == has_more::yes) {
+                    print_text(d, {d.width - c_menuSpaceForMore + c_menuPadding, currentY + c_menuItemHeight - c_menuPadding}, ">", fontColor);
+                }
+
 
                 hline(d, {c_menuPadding, currentY + c_menuItemHeight + 1}, d.width - c_menuPadding * 2, true);
                 currentY += c_menuItemHeight;
@@ -335,7 +345,17 @@ namespace {
     public:
         class message_state : public widget_state {
         public:
-            message_state(const Message& widget) noexcept : widget_{widget} {}
+            message_state(const Message& widget) noexcept : widget_{widget}, current_text_{widget_.text_} {}
+
+            bool changed() noexcept override {
+                if (current_text_ != widget_.text_) {
+                    //printf("Message with text '%s' changed to '%s'", current_text_.c_str(), widget_.text_.c_str());
+                    current_text_ = widget_.text_;
+                    return true;
+                }
+
+                return false;
+            }
 
             bool handle_event(event event) noexcept override {
                 switch (event) {
@@ -363,13 +383,13 @@ namespace {
 
                 std::size_t old_pos{0};
                 std::size_t pos{0};
-                while ((pos = widget_.text_.find('\n', old_pos)) != std::string::npos)
+                while ((pos = current_text_.find('\n', old_pos)) != std::string::npos)
                 {
-                    print_line_of_text(std::string_view(widget_.text_).substr(old_pos, pos - old_pos));
+                    print_line_of_text(std::string_view(current_text_).substr(old_pos, pos - old_pos));
                     old_pos = pos + 1;
                 }
 
-                print_line_of_text(std::string_view(widget_.text_).substr(old_pos));
+                print_line_of_text(std::string_view(current_text_).substr(old_pos));
 
                 // Button
                 const int button_width = d.width / 3;
@@ -389,6 +409,7 @@ namespace {
 
         private:
             const Message& widget_;
+            std::string current_text_;
         };
 
         Message(std::string header, std::string text, std::string button_caption, std::function<void()> click) :
@@ -398,11 +419,25 @@ namespace {
             return std::make_unique<message_state>(*this);
         }
 
+        void update_text(std::string new_text) {
+            text_ = new_text;
+            changed_ = true;
+        }
+
     private:
+        bool changed() noexcept {
+            if (changed_) {
+                changed_ = false;
+                return true;
+            }
+
+            return false;
+        }
         std::string header_;
         std::string text_;
         std::string button_caption_;
         std::function<void()> click_;
+        bool changed_;
     };
 
 // void draw_something(ev3dev::lcd& lcd) {
@@ -434,9 +469,23 @@ namespace {
 //     }
 // }
 
+
+
+    struct homing_results{
+        int tool_up_pos;
+        int tool_down_pos;
+
+        int x_min;
+        int x_max;
+
+        int y_min;
+        int y_max;
+    };
+
     struct state {
         std::unique_ptr<IWidget::widget_state> widget_;
-        bool widget_changed_{true};
+        bool changed_{false};
+        std::optional<homing_results> homed_;
 
         button down_button{ev3dev::button::down};
         button up_button{ev3dev::button::up};
@@ -446,37 +495,35 @@ namespace {
         ev3dev::large_motor x_motor{ev3dev::OUTPUT_B};
         ev3dev::large_motor y_motor{ev3dev::OUTPUT_C};
 
-        bool handle_events() {
-            bool something_changed{widget_changed()};
-
+        void handle_events() {
             if (down_button.pressed()) {
-                something_changed = something_changed || widget_->handle_event(event::down);
+                changed_ = changed_ || widget_->handle_event(event::down);
             }
 
             if (up_button.pressed()) {
-                something_changed = something_changed || widget_->handle_event(event::up);
+                changed_ = changed_ || widget_->handle_event(event::up);
             }
 
             if (ok_button.pressed()) {
-                something_changed = something_changed || widget_->handle_event(event::ok);
+                changed_ = changed_ || widget_->handle_event(event::ok);
             }
-
-            return something_changed;
         }
 
         void set_widget(std::unique_ptr<IWidget::widget_state> widget) {
             widget_ = std::move(widget);
-            widget_changed_ = true;
+            changed_ = true;
         }
 
         void draw(ev3plotter::display& d) {
-            widget_->draw(d);
+            if (changed()) {
+                //printf("Changed! Drawing...\n");
+                widget_->draw(d);
+            }
         }
 
-        bool widget_changed() {
-            if (widget_changed_)
-            {
-                widget_changed_ = false;
+        bool changed() {
+            if (changed_ || widget_->changed()) {
+                changed_ = false;
                 return true;
             }
 
@@ -484,21 +531,45 @@ namespace {
         }
     };
 
-    void home(state& s, ev3plotter::display& d, const IWidget& prevWidget) {
-        bool stop{false};
+    std::string print_homing_results(const homing_results& results) {
+        return std::string{"X: ["} + std::to_string(results.x_min) + ", " + std::to_string(results.x_max) + "]->" + std::to_string(results.x_min - results.x_max) + "\n" +
+               std::string{"Y: ["} + std::to_string(results.y_min) + ", " + std::to_string(results.y_max) + "]->" + std::to_string(results.y_max - results.y_min) + "\n" +
+               std::string{"Tool: ["} + std::to_string(results.tool_down_pos) + ", " + std::to_string(results.tool_up_pos) + "]->" + std::to_string(results.tool_down_pos - results.tool_up_pos);
+    }
+
+    homing_results home(state& s, ev3plotter::display& d, const IWidget& prevWidget) {
+        enum class home
+        {
+            start,
+            homing_tool_up,
+            homing_x_left,
+            homing_x_right,
+            homing_y_min,
+            homing_y_max,
+            go_for_homing_tool_down,
+            homing_tool_down,
+            show_results,
+            showing_results,
+            stop
+        } local_state{home::start};
 
         //auto wait{[](){std::this_thread::sleep_for(std::second{1});}};
 
         const auto finish{[&] {
             s.set_widget(prevWidget.make());
-            stop = true;
+            local_state = home::stop;
+        }};
+
+        int current_step = 1;
+        const auto make_step_text{[&current_step](auto step_text) {
+            return std::string{"Step"} + std::to_string(current_step++) + " of 6: " + step_text + "\nPress 'ok' to stop.";
         }};
 
         Message homing_message{[&](){
             if (s.tool_motor.connected()) {
                 return Message{
-                    "Homing...",
-                    "Please wait while\nall axes have\nhomed\nPress 'ok' to stop.",
+                    "Homing, please wait...",
+                    make_step_text("tool up"),
                     "Stop",
                     finish};
             } else {
@@ -510,48 +581,181 @@ namespace {
             }
             }()};
 
+        homing_results results;
+
+
+        Message results_message{
+            "Homing results:",
+            "",
+            "Exit",
+            finish
+        };
+
         s.set_widget(homing_message.make());
 
-        enum
-        {
-            start_homing,
-            homing_tool_down,
-        } local_state{start_homing};
 
         const auto has_state{[&](auto& motor, const auto& state) {
             const auto& current_states = motor.state();
             return current_states.find(state) != current_states.end();
         }};
 
-        while (!stop)
-        {
-            if (s.handle_events()) {
-                s.draw(d);
+        const auto stalled{[&](auto &motor) { return has_state(motor, motor.state_stalled); }};
+
+        const auto start_motor{[](auto &motor, auto cycle_sp) {
+            motor
+                .set_polarity(motor.polarity_normal)
+                .set_duty_cycle_sp(cycle_sp)
+                .run_direct();
+        }};
+
+        const auto finish_homing{[&](auto &motor, auto& store_pos) {
+            if (stalled(motor))
+            {
+                motor.stop();
+                store_pos = motor.position();
+                std::this_thread::sleep_for(std::chrono::milliseconds{500});
+                return true;
             }
 
-            switch (local_state) {
-            case start_homing:
-                s.tool_motor.reset();
-                s.tool_motor.set_polarity(s.tool_motor.polarity_normal);
-                // s.tool_motor.set_stop_action(s.tool_motor.stop_action_hold);
-                // s.tool_motor.set_duty_cycle_sp(40);
-                // s.tool_motor.run_direct();
-                s.tool_motor.set_speed_sp(100).run_forever();
-                local_state = homing_tool_down;
+            return false;
+        }};
+
+        const auto start_homing{[&](auto& motor, auto cycle_sp, auto step_text, auto next_state){
+            homing_message.update_text(make_step_text(step_text));
+            start_motor(motor, cycle_sp);
+            local_state = next_state;
+        }};
+
+
+        s.tool_motor.reset();
+        s.x_motor.reset();
+        s.y_motor.reset();
+
+        while (true)
+        {
+            s.handle_events();
+            s.draw(d);
+
+            switch (local_state)
+            {
+            case home::start:
+                start_motor(s.tool_motor, -30);
+                local_state = home::homing_tool_up;
                 break;
 
-            case homing_tool_down:
-                if (has_state(s.tool_motor, s.tool_motor.state_stalled)) {
-                    s.tool_motor.stop();
-                    finish();
+            case home::homing_tool_up:
+                if (finish_homing(s.tool_motor, results.tool_up_pos)) {
+                    start_homing(s.x_motor, +50, "x min (left)", home::homing_x_left);
                 }
                 break;
+
+            case home::homing_x_left:
+                if (finish_homing(s.x_motor, results.x_min)) {
+                    start_homing(s.x_motor, -50, "x max (right)", home::homing_x_right);
+                }
+                break;
+
+            case home::homing_x_right:
+                if (finish_homing(s.x_motor, results.x_max)) {
+                    start_homing(s.y_motor, -40, "y min", home::homing_y_min);
+                }
+                break;
+
+            case home::homing_y_min:
+                if (finish_homing(s.y_motor, results.y_min)) {
+                    start_homing(s.y_motor, +40, "y max", home::homing_y_max);
+                }
+                break;
+
+            case home::homing_y_max:
+                if (finish_homing(s.y_motor, results.y_max)) {
+                    local_state = home::go_for_homing_tool_down;
+                }
+                break;
+
+            case home::go_for_homing_tool_down:
+                start_homing(s.tool_motor, +20, "tool down", home::homing_tool_down);
+                break;
+
+            case home::homing_tool_down:
+                if (finish_homing(s.tool_motor, results.tool_down_pos)) {
+                    local_state = home::show_results;
+                }
+                break;
+
+            case home::show_results:
+                results_message.update_text(print_homing_results(results));
+                s.set_widget(results_message.make());
+                local_state = home::showing_results;
+                break;
+
+            case home::showing_results:
+                break;
+
+            case home::stop:
+                return results;
             }
 
-            std::this_thread::sleep_for(std::chrono::seconds{2});
+            std::this_thread::sleep_for(std::chrono::milliseconds{10});
+        }
+
+        //return results;
+    }
+
+    namespace commands {
+        void go(state& s, std::optional<int> x, std::optional<int> y, std::optional<int> z) {
+            bool stop{false};
+
+            if (x) {
+                s.x_motor.set_speed_sp(100).set_position_sp(*x).run_to_abs_pos();
+            }
+
+            if (y) {
+                s.y_motor.set_speed_sp(100).set_position_sp(*y).run_to_abs_pos();
+            }
+
+            if (z) {
+                s.tool_motor.set_speed_sp(100).set_position_sp(*z).run_to_abs_pos();
+            }
+
+            const auto position_reached{[&] {
+                bool all_reached{true};
+                if (x) {
+                    all_reached = all_reached && s.x_motor.position() == *x;
+                }
+
+                if (y) {
+                    all_reached = all_reached && s.y_motor.position() == *y;
+                }
+
+                if (z) {
+                    all_reached = all_reached && s.tool_motor.position() == *z;
+                }
+
+                return all_reached;
+            }};
+
+            while (!(stop || position_reached())) {
+                stop = s.ok_button.pressed();
+
+                std::this_thread::sleep_for(std::chrono::milliseconds{200});
+            }
         }
     }
+
+    int read_x(const state& s) noexcept {
+        return s.x_motor.position();
+    }
+
+    int read_y(const state& s) noexcept {
+        return s.y_motor.position();
+    }
+
+    // int read_z(const state& s) noexcept {
+    //     return s.tool_motor.position();
+    // }
 }
+
 
 int main()
 {
@@ -584,15 +788,46 @@ int main()
 
     ev3plotter::display d{display.frame_buffer(), static_cast<int>(display.resolution_x()), static_cast<int>(display.resolution_y())};
 
+    Message show_homing_results{
+        "Homing results:",
+        "Homing not done!",
+        "Exit",
+        [&]{ s.set_widget(main_menu_ptr->make()); }
+    };
+
+    const auto if_homed{[&](auto do_when_homed){
+        if (s.homed_) {
+            do_when_homed();
+        } else {
+            s.set_widget(show_homing_results.make());
+        }
+    }};
+
+    StaticMenu utilities_menu {
+        "Utilities", {
+            { "< Back", [&]{ s.set_widget(main_menu_ptr->make()); }, has_more::no },
+            { "Go to x0", [&]{ if_homed([&]{ commands::go(s, s.homed_->x_min, {}, {});}); }, has_more::no },
+            { "Drive x 300", [&]{ commands::go(s, read_x(s) + 300, {}, {}); }, has_more::no },
+            { "Go to y0", [&]{ if_homed([&]{ commands::go(s, {}, s.homed_->y_min, {}); }); }, has_more::no },
+            { "Drive y 300", [&]{ commands::go(s, {}, read_y(s) + 300, {}); }, has_more::no },
+            { "Tool up", [&]{ if_homed([&]{ commands::go(s, {}, {}, s.homed_->tool_up_pos); }); }, has_more::no },
+            { "Tool down", [&]{ if_homed([&]{ commands::go(s, {}, {}, s.homed_->tool_down_pos); }); }, has_more::no }
+        }
+    };
 
     StaticMenu main_menu{
-        "Main menu",
-        {
-            {"home", [&]() { home(s, d, *main_menu_ptr); }, has_more::no},
+        "Main menu", {
+            {"home", [&]() {
+                    s.homed_ = home(s, d, *main_menu_ptr);
+                    show_homing_results.update_text(print_homing_results(*s.homed_));
+                }, has_more::no},
             {"display required connections", [&]() { s.set_widget(message.make()); }, has_more::no},
+            {"show homing results", [&](){ s.set_widget(show_homing_results.make()); }, has_more::no },
+            {"utilities", [&]{ s.set_widget(utilities_menu.make()); }, has_more::yes },
             {"exit", [&]() { s.set_widget(exit_menu.make()); }, has_more::no }
         }
     };
+
 
     main_menu_ptr = &main_menu;
 
@@ -602,27 +837,10 @@ int main()
     s.draw(d);
 
     while (!exit) {
-        //s.handle_events();
-
-        if (s.handle_events())
-        {
-            s.draw(d);
-        }
-
+        s.handle_events();
+        s.draw(d);
         std::this_thread::sleep_for(std::chrono::milliseconds{100});
     }
-
-    //draw_something(display);
-
-    //wait_for_back_press();
-
-    //Motor x{"X", ev3dev::OUTPUT_A};
-    //Motor y{"Y", ev3dev::OUTPUT_B};
-
-    //x.motor.
-
-    //drive(100, 500, x, y);
-    //drive(100, -500, x, y);
 
     return 0;
 }
