@@ -31,11 +31,14 @@ using namespace ev3plotter;
 #include <string_view>
 #include <type_traits>
 
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+
 #include <named_type/named_type.hpp>
 
+#include <type_traits>
 
 namespace {
-
     struct button {
 
     button(ev3dev::button& b) : b_{b} {}
@@ -56,7 +59,7 @@ private:
 };
 
     template <typename T, typename TTag>
-    using StrongInt = fluent::NamedType<T, TTag, fluent::Addable, fluent::Subtractable, fluent::Comparable, fluent::Incrementable, fluent::Hashable>;
+    using StrongInt = fluent::NamedType<T, TTag, fluent::Addable, fluent::Subtractable, fluent::Comparable, fluent::Incrementable, fluent::Hashable, fluent::Printable>;
 
     using menu_index = StrongInt<std::uint32_t, struct IndexTag>;
     using raw_pos = StrongInt<int, struct RawPosTag>;
@@ -221,7 +224,7 @@ private:
         struct menu_item {
             std::string name;
             std::function<void()> action;
-            has_more more;
+            has_more more{false};
         };
 
         StaticMenu(std::string name, std::vector<menu_item> items) : name_{std::move(name)}, items_{std::move(items)} {}
@@ -336,46 +339,15 @@ private:
         bool changed_;
     };
 
-// void draw_something(ev3dev::lcd& lcd) {
-//     auto* buffer = lcd.frame_buffer();
-
-//     display d{buffer, static_cast<int>(lcd.resolution_x()), static_cast<int>(lcd.resolution_y())};
-
-//     // std::this_thread::sleep_for(std::chrono::seconds{2});
-//     // display.fill(0xff);
-//     // std::this_thread::sleep_for(std::chrono::seconds{2});
-
-
-//     bool backPressed{false};
-//     int x = 0;
-//     while (!backPressed)
-//     {
-//         if ((x + 40) >= d.width) {
-//             x = 0;
-//         }
-
-//         d.fill(false);
-//         rectangle(d, {{x, 10}, {x + 40, 10 + 40}}, true);
-//         print_text(d, {x + 1, 11}, "ABAB", false);
-//         print_text(d, {x + 41, 11}, "ABBAA", true);
-
-//         backPressed = ev3dev::button::back.pressed ();
-//         std::this_thread::sleep_for(std::chrono::milliseconds{100});
-//         //++x;
-//     }
-// }
-
-
-
     struct homing_results{
-        raw_pos tool_up_pos;
-        raw_pos tool_down_pos;
+        raw_pos tool_up_pos{0};
+        raw_pos tool_down_pos{0};
 
-        raw_pos x_min;
-        raw_pos x_max;
+        raw_pos x_min{0};
+        raw_pos x_max{0};
 
-        raw_pos y_min;
-        raw_pos y_max;
+        raw_pos y_min{0};
+        raw_pos y_max{0};
     };
 
     struct state {
@@ -412,7 +384,6 @@ private:
 
         void draw(ev3plotter::display& d) {
             if (changed()) {
-                //printf("Changed! Drawing...\n");
                 widget_->draw(d);
             }
         }
@@ -428,9 +399,13 @@ private:
     };
 
     std::string print_homing_results(const homing_results& results) {
-        return std::string{"X: ["} + std::to_string(results.x_min) + ", " + std::to_string(results.x_max) + "]->" + std::to_string(results.x_min - results.x_max) + "\n" +
-               std::string{"Y: ["} + std::to_string(results.y_min) + ", " + std::to_string(results.y_max) + "]->" + std::to_string(results.y_max - results.y_min) + "\n" +
-               std::string{"Tool: ["} + std::to_string(results.tool_down_pos) + ", " + std::to_string(results.tool_up_pos) + "]->" + std::to_string(results.tool_down_pos - results.tool_up_pos);
+        return fmt::format(
+             "X: [{}, {}]-> {}\n"
+             "Y: [{}, {}]-> {}\n"
+             "Tool: [{}, {}]-> {}\n",
+             results.x_min, results.x_max, std::abs((results.x_min - results.x_max).get()),
+             results.y_min, results.y_max, std::abs((results.y_min - results.y_max).get()),
+             results.tool_up_pos, results.tool_down_pos, std::abs((results.tool_up_pos - results.tool_down_pos).get()));
     }
 
     homing_results home(state& s, ev3plotter::display& d, const IWidget& prevWidget) {
@@ -508,7 +483,7 @@ private:
             if (stalled(motor))
             {
                 motor.stop();
-                store_pos = motor.position();
+                store_pos = raw_pos{motor.position()};
                 std::this_thread::sleep_for(std::chrono::milliseconds{500});
                 return true;
             }
@@ -594,8 +569,6 @@ private:
 
             std::this_thread::sleep_for(std::chrono::milliseconds{10});
         }
-
-        //return results;
     }
 
     namespace commands {
@@ -603,29 +576,29 @@ private:
             bool stop{false};
 
             if (x) {
-                s.x_motor.set_speed_sp(100).set_position_sp(*x).run_to_abs_pos();
+                s.x_motor.set_speed_sp(100).set_position_sp(x->get()).run_to_abs_pos();
             }
 
             if (y) {
-                s.y_motor.set_speed_sp(100).set_position_sp(*y).run_to_abs_pos();
+                s.y_motor.set_speed_sp(100).set_position_sp(y->get()).run_to_abs_pos();
             }
 
             if (z) {
-                s.tool_motor.set_speed_sp(100).set_position_sp(*z).run_to_abs_pos();
+                s.tool_motor.set_speed_sp(100).set_position_sp(z->get()).run_to_abs_pos();
             }
 
             const auto position_reached{[&] {
                 bool all_reached{true};
                 if (x) {
-                    all_reached = all_reached && s.x_motor.position() == *x;
+                    all_reached = all_reached && raw_pos{s.x_motor.position()} == *x;
                 }
 
                 if (y) {
-                    all_reached = all_reached && s.y_motor.position() == *y;
+                    all_reached = all_reached && raw_pos{s.y_motor.position()} == *y;
                 }
 
                 if (z) {
-                    all_reached = all_reached && s.tool_motor.position() == *z;
+                    all_reached = all_reached && raw_pos{s.tool_motor.position()} == *z;
                 }
 
                 return all_reached;
@@ -642,19 +615,15 @@ private:
     namespace pos {
         namespace detail {
             raw_pos to_raw(raw_pos min, raw_pos max, normalized_pos val) {
-                if (min < max) {
-                    return std::clamp(min + raw_pos{val}, min, max);
-                } else  {
-                    return std::clamp(min - raw_pos{val}, max, min);
-                }
+                return (min < max)
+                    ? std::clamp(min + raw_pos{val.get()}, min, max)
+                    : std::clamp(min - raw_pos{val.get()}, max, min);
             }
 
             normalized_pos to_norm(raw_pos min, raw_pos max, raw_pos val) {
-                if (min < max) {
-                    return std::clamp(val - min, 0, max - min);
-                } else  {
-                    return std::clamp(val + min, 0, min - max);
-                }
+            return normalized_pos{((min < max)
+                ? std::clamp(val - min, raw_pos{0}, max - min)
+                : std::clamp(val + min, raw_pos{0}, min - max)).get()};
             }
         }
 
@@ -671,18 +640,17 @@ private:
         }
 
         normalized_pos read_x(const state& s) noexcept {
-            return detail::to_norm(s.homed_->y_min, s.homed_->x_max, s.x_motor.position());
+            return detail::to_norm(s.homed_->y_min, s.homed_->x_max, raw_pos{s.x_motor.position()});
         }
 
         normalized_pos read_y(const state& s) noexcept {
-            return detail::to_norm(s.homed_->y_min, s.homed_->y_max, s.y_motor.position());
+            return detail::to_norm(s.homed_->y_min, s.homed_->y_max, raw_pos{s.y_motor.position()});
+        }
+
+        normalized_pos z_travel(const homing_results& h) noexcept {
+            return normalized_pos{std::abs((h.tool_down_pos - h.tool_up_pos).get())};
         }
     }
-
-
-    // int read_z(const state& s) noexcept {
-    //     return s.tool_motor.position();
-    // }
 }
 
 
@@ -691,11 +659,6 @@ int main()
     bool exit = false;
     ev3dev::lcd display{};
 
-    if (!verify_device(display))
-    {
-        return -1;
-    }
-
     state s;
 
     const StaticMenu *main_menu_ptr{};
@@ -703,8 +666,8 @@ int main()
     StaticMenu exit_menu{
         "Exit?",
         {
-            {"yes", [&exit] { exit = true; }, has_more::no},
-            {"no",  [&]() { s.set_widget(main_menu_ptr->make()); }, has_more::no }
+            {"yes", [&exit] { exit = true; }},
+            {"no",  [&]() { s.set_widget(main_menu_ptr->make()); } }
         }
     };
 
@@ -717,43 +680,48 @@ int main()
 
     ev3plotter::display d{display.frame_buffer(), static_cast<int>(display.resolution_x()), static_cast<int>(display.resolution_y())};
 
+    const IWidget* show_homing_limits_return_widget = main_menu_ptr;
     Message show_homing_results{
         "Homing results:",
         "Homing not done!",
         "Exit",
-        [&]{ s.set_widget(main_menu_ptr->make()); }
+        [&]{ s.set_widget(show_homing_limits_return_widget->make()); }
     };
 
+    const IWidget* utilities_menu_ptr{nullptr};
     const auto if_homed{[&](auto do_when_homed){
         if (s.homed_) {
             do_when_homed();
         } else {
+            show_homing_limits_return_widget = utilities_menu_ptr;
             s.set_widget(show_homing_results.make());
         }
     }};
 
     StaticMenu utilities_menu {
         "Utilities", {
-            { "< Back", [&]{ s.set_widget(main_menu_ptr->make()); }, has_more::no },
-            { "Go to x0", [&]{ if_homed([&]{ commands::go(s, pos::x(*s.homed_, 0), {}, {});}); }, has_more::no },
-            { "Drive x 300", [&]{ if_homed([&]{ commands::go(s, pos::x(pos::read_x(s) + 300), {}, {}); }; }, has_more::no },
-            { "Go to y0", [&]{ if_homed([&]{ commands::go(s, {}, pos::y(*s.homed_, 0), {}); }); }, has_more::no },
-            { "Drive y 300", [&]{ if_homed([&]{ commands::go(s, {}, pos::y(pos::read_y(s) + 300), {}); }; }, has_more::no },
-            { "Tool up", [&]{ if_homed([&]{ commands::go(s, {}, {}, pos::z(*s.homed_, 0)); }); }, has_more::no },
-            { "Tool down", [&]{ if_homed([&]{ commands::go(s, {}, {}, pos::z(*s.homed_, 0) + pos::z_travel(*.s_homed_)); }); }, has_more::no }
+            { "< Back", [&]{ show_homing_limits_return_widget = main_menu_ptr; s.set_widget(main_menu_ptr->make()); } },
+            { "Go to x0", [&]{ if_homed([&]{ commands::go(s, pos::x(*s.homed_, normalized_pos{0}), {}, {});}); } },
+            { "Drive x 300", [&]{ if_homed([&]{ commands::go(s, pos::x(*s.homed_, pos::read_x(s) + normalized_pos{300}), {}, {}); }); } },
+            { "Go to y0", [&]{ if_homed([&]{ commands::go(s, {}, pos::y(*s.homed_, normalized_pos{0}), {}); }); } },
+            { "Drive y 300", [&]{ if_homed([&]{ commands::go(s, {}, pos::y(*s.homed_, pos::read_y(s) + normalized_pos{300}), {}); }); } },
+            { "Tool up", [&]{ if_homed([&]{ commands::go(s, {}, {}, pos::z(*s.homed_, normalized_pos{0})); }); } },
+            { "Tool down", [&]{ if_homed([&]{ commands::go(s, {}, {}, pos::z(*s.homed_, normalized_pos{0}) + raw_pos{pos::z_travel(*s.homed_).get()}); }); } }
         }
     };
+
+    utilities_menu_ptr = &utilities_menu;
 
     StaticMenu main_menu{
         "Main menu", {
             {"home", [&]() {
                     s.homed_ = home(s, d, *main_menu_ptr);
                     show_homing_results.update_text(print_homing_results(*s.homed_));
-                }, has_more::no},
-            {"display required connections", [&]() { s.set_widget(message.make()); }, has_more::no},
-            {"show homing results", [&](){ s.set_widget(show_homing_results.make()); }, has_more::no },
-            {"utilities", [&]{ s.set_widget(utilities_menu.make()); }, has_more::yes },
-            {"exit", [&]() { s.set_widget(exit_menu.make()); }, has_more::no }
+                }},
+            {"display required connections", [&]() { s.set_widget(message.make()); }},
+            {"show homing results", [&](){ s.set_widget(show_homing_results.make()); } },
+            {"utilities", [&]{ s.set_widget(utilities_menu.make()); }, has_more{true}},
+            {"exit", [&]() { s.set_widget(exit_menu.make()); } }
         }
     };
 
