@@ -31,66 +31,12 @@ using namespace ev3plotter;
 #include <string_view>
 #include <type_traits>
 
-struct Motor
-{
-    Motor(std::string nameSrc, const char* port) : name{std::move(nameSrc)}, motor{port}
-    {}
+#include <named_type/named_type.hpp>
 
-    std::string name;
-    ev3dev::large_motor motor;
-};
 
-// template <typename T>
-// struct Array
-// {
-//     template <std::size_t N>
-//     constexpr Array(T (&arr)[N]) noexcept : data{arr}, size{N}
-//     {}
+namespace {
 
-//     T* data;
-//     std::size_t size;
-// };
-
-template <typename... TMotors>
-void drive(int speed, int distance, TMotors&&... motors)
-{
-    std::string names;
-    auto addName{[&names](const auto& motor){ names += " " + motor.name; }};
-
-    {
-        std::initializer_list<int> dummy{(addName(motors), 0)...};
-        (void)dummy;
-    }
-
-    std::cout << "Driving " << names << ", to " << distance << "at speed " << speed << "\n";
-
-    auto startDriving{[distance, speed](Motor& motor){
-        motor.motor.set_position_sp(distance).set_speed_sp(speed).run_to_rel_pos();
-    }};
-
-    {
-        std::initializer_list<int> dummy{(startDriving(motors), 0)...};
-        (void)dummy;
-    }
-
-    auto running{[](const Motor& motor){
-        return motor.motor.state().count("running") != 0;
-    }};
-
-    auto allStopped{[&](){
-        std::initializer_list<int> runningCounts{running(motors)...};
-        return std::accumulate(runningCounts.begin(), runningCounts.end(), 0, [](auto a, auto b){ return a + b; }) == 0;
-    }};
-
-    while (!allStopped())
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-
-    std::cout << "Done driving " << names << "!\n";
-}
-
-struct button {
+    struct button {
 
     button(ev3dev::button& b) : b_{b} {}
 
@@ -109,34 +55,15 @@ private:
     bool prev_pressed_{false};
 };
 
-void wait_for_back_press() {
-    bool backPressed{false};
-    while (!backPressed)
-    {
-        backPressed = ev3dev::button::back.pressed ();
-        std::this_thread::sleep_for(std::chrono::milliseconds{100});
-    }
-}
+    template <typename T, typename TTag>
+    using StrongInt = fluent::NamedType<T, TTag, fluent::Addable, fluent::Subtractable, fluent::Comparable, fluent::Incrementable, fluent::Hashable>;
 
-bool verify_device(const ev3dev::lcd& display) {
-    if (display.bits_per_pixel() != 1)
-    {
-        //std::cout << "########\n";
-        //std::cout << "display does not have 1 bits per pixel! It has " << display.bits_per_pixel() << ". Failing..." << std::endl;
-        //wait_for_back_press();
-        //return false;
-    }
+    using menu_index = StrongInt<std::uint32_t, struct IndexTag>;
+    using raw_pos = StrongInt<int, struct RawPosTag>;
+    using normalized_pos = StrongInt<int, struct NormalizedTag>;
+    using mm_pos = StrongInt<int, struct MmPosTag>;
 
-    return true;
-}
-
-namespace {
-    enum class menu_index : std::uint32_t {};
-    enum class has_more
-    {
-        yes,
-        no
-    };
+    using has_more = fluent::NamedType<bool, struct HasMoreTag, fluent::Comparable>;
 
     class state;
 
@@ -147,37 +74,6 @@ namespace {
         right,
         ok
     };
-
-    template <typename>
-    struct is_strong_def : std::false_type{};
-
-    template <>
-    struct is_strong_def<menu_index> : std::true_type{
-    };
-
-    #define STRONG_DEF_SFINAE(TType_) \
-    std::enable_if_t< \
-        is_strong_def< \
-            std::remove_reference_t< \
-                std::remove_cv_t<TType_> \
-            > \
-        >::value>* = nullptr
-
-    template <typename TEnum, STRONG_DEF_SFINAE(TEnum)>
-    std::underlying_type_t<TEnum> as_int(TEnum e)
-    {
-        return static_cast<std::underlying_type_t<TEnum>>(e);
-    }
-
-    template <typename TEnum, STRONG_DEF_SFINAE(TEnum)>
-    TEnum operator+(TEnum a, TEnum b) {
-        return TEnum{as_int(a) + as_int(b)};
-    }
-
-    template <typename TEnum, STRONG_DEF_SFINAE(TEnum)>
-    TEnum operator-(TEnum a, TEnum b) {
-        return TEnum{as_int(a) - as_int(b)};
-    }
 
     class IWidget {
     public:
@@ -249,7 +145,7 @@ namespace {
                 fill(d, {{0, currentY}, {d.width - 1, currentY + c_menuItemHeight}}, backgroundColor);
                 print_text(d, {c_menuPadding, currentY + c_menuItemHeight - c_menuPadding}, {{c_menuCutoutPadding, currentY + c_menuCutoutPadding}, {textEndX - c_menuSpaceForMore, currentY + c_menuItemHeight - c_menuCutoutPadding}}, name, fontColor);
 
-                if (more == has_more::yes) {
+                if (more == has_more{true}) {
                     print_text(d, {d.width - c_menuSpaceForMore + c_menuPadding, currentY + c_menuItemHeight - c_menuPadding}, ">", fontColor);
                 }
 
@@ -262,7 +158,7 @@ namespace {
 
         private:
             bool down_pressed() {
-                if (as_int(current_item_) + 1 < as_int(size())) {
+                if (current_item_ + menu_index{1} < size()) {
                     current_item_ = current_item_ + menu_index{1};
                     return true;
                 }
@@ -271,7 +167,7 @@ namespace {
             }
 
             bool up_pressed() {
-                if (as_int(current_item_) != 0) {
+                if (current_item_ != menu_index{0}) {
                     current_item_ = current_item_ - menu_index{1};
                     return true;
                 }
@@ -303,10 +199,10 @@ namespace {
             }
 
             void loop_over_elements(menu_index from, menu_index to, std::function<bool(menu_index, std::string_view, has_more)> callback) const noexcept  override {
-                auto index = static_cast<decltype(items_)::difference_type>(from);
-                for (auto i = widget_.items_.begin() + index; i != widget_.items_.begin() + static_cast<decltype(items_)::difference_type>(to); ++i)
+                auto index = static_cast<decltype(items_)::difference_type>(from.get());
+                for (auto i = widget_.items_.begin() + index; i != widget_.items_.begin() + static_cast<decltype(items_)::difference_type>(to.get()); ++i)
                 {
-                    if (!callback(static_cast<menu_index>(index), i->name, i->more)) {
+                    if (!callback(menu_index{static_cast<std::uint32_t>(index)}, i->name, i->more)) {
                         return;
                     }
 
@@ -315,7 +211,7 @@ namespace {
             }
 
             void click(menu_index index) const noexcept override {
-                widget_.items_[static_cast<std::uint32_t>(index)].action();
+                widget_.items_[index.get()].action();
             }
 
         private:
@@ -472,14 +368,14 @@ namespace {
 
 
     struct homing_results{
-        int tool_up_pos;
-        int tool_down_pos;
+        raw_pos tool_up_pos;
+        raw_pos tool_down_pos;
 
-        int x_min;
-        int x_max;
+        raw_pos x_min;
+        raw_pos x_max;
 
-        int y_min;
-        int y_max;
+        raw_pos y_min;
+        raw_pos y_max;
     };
 
     struct state {
@@ -703,7 +599,7 @@ namespace {
     }
 
     namespace commands {
-        void go(state& s, std::optional<int> x, std::optional<int> y, std::optional<int> z) {
+        void go(state& s, std::optional<raw_pos> x, std::optional<raw_pos> y, std::optional<raw_pos> z) {
             bool stop{false};
 
             if (x) {
@@ -743,13 +639,46 @@ namespace {
         }
     }
 
-    int read_x(const state& s) noexcept {
-        return s.x_motor.position();
+    namespace pos {
+        namespace detail {
+            raw_pos to_raw(raw_pos min, raw_pos max, normalized_pos val) {
+                if (min < max) {
+                    return std::clamp(min + raw_pos{val}, min, max);
+                } else  {
+                    return std::clamp(min - raw_pos{val}, max, min);
+                }
+            }
+
+            normalized_pos to_norm(raw_pos min, raw_pos max, raw_pos val) {
+                if (min < max) {
+                    return std::clamp(val - min, 0, max - min);
+                } else  {
+                    return std::clamp(val + min, 0, min - max);
+                }
+            }
+        }
+
+        raw_pos x(const homing_results& h, normalized_pos val) {
+            return detail::to_raw(h.x_min, h.x_max, val);
+        }
+
+        raw_pos y(const homing_results& h, normalized_pos val) {
+            return detail::to_raw(h.y_min, h.y_max, val);
+        }
+
+        raw_pos z(const homing_results& h, normalized_pos val) {
+            return detail::to_raw(h.tool_up_pos, h.tool_down_pos, val);
+        }
+
+        normalized_pos read_x(const state& s) noexcept {
+            return detail::to_norm(s.homed_->y_min, s.homed_->x_max, s.x_motor.position());
+        }
+
+        normalized_pos read_y(const state& s) noexcept {
+            return detail::to_norm(s.homed_->y_min, s.homed_->y_max, s.y_motor.position());
+        }
     }
 
-    int read_y(const state& s) noexcept {
-        return s.y_motor.position();
-    }
 
     // int read_z(const state& s) noexcept {
     //     return s.tool_motor.position();
@@ -806,12 +735,12 @@ int main()
     StaticMenu utilities_menu {
         "Utilities", {
             { "< Back", [&]{ s.set_widget(main_menu_ptr->make()); }, has_more::no },
-            { "Go to x0", [&]{ if_homed([&]{ commands::go(s, s.homed_->x_min, {}, {});}); }, has_more::no },
-            { "Drive x 300", [&]{ commands::go(s, read_x(s) + 300, {}, {}); }, has_more::no },
-            { "Go to y0", [&]{ if_homed([&]{ commands::go(s, {}, s.homed_->y_min, {}); }); }, has_more::no },
-            { "Drive y 300", [&]{ commands::go(s, {}, read_y(s) + 300, {}); }, has_more::no },
-            { "Tool up", [&]{ if_homed([&]{ commands::go(s, {}, {}, s.homed_->tool_up_pos); }); }, has_more::no },
-            { "Tool down", [&]{ if_homed([&]{ commands::go(s, {}, {}, s.homed_->tool_down_pos); }); }, has_more::no }
+            { "Go to x0", [&]{ if_homed([&]{ commands::go(s, pos::x(*s.homed_, 0), {}, {});}); }, has_more::no },
+            { "Drive x 300", [&]{ if_homed([&]{ commands::go(s, pos::x(pos::read_x(s) + 300), {}, {}); }; }, has_more::no },
+            { "Go to y0", [&]{ if_homed([&]{ commands::go(s, {}, pos::y(*s.homed_, 0), {}); }); }, has_more::no },
+            { "Drive y 300", [&]{ if_homed([&]{ commands::go(s, {}, pos::y(pos::read_y(s) + 300), {}); }; }, has_more::no },
+            { "Tool up", [&]{ if_homed([&]{ commands::go(s, {}, {}, pos::z(*s.homed_, 0)); }); }, has_more::no },
+            { "Tool down", [&]{ if_homed([&]{ commands::go(s, {}, {}, pos::z(*s.homed_, 0) + pos::z_travel(*.s_homed_)); }); }, has_more::no }
         }
     };
 
