@@ -35,10 +35,7 @@
             "dont_sanitize": {
                 "short": "Don't sanitize",
                 "long": "Not using Address Sanitizer",
-                "linkage": "static",
-                "settings": {
-                    "CMAKE_EXE_LINKER_FLAGS": "-static"
-                }
+                "linkage": "shared"
             }
         }
     }

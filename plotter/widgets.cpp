@@ -14,6 +14,7 @@ public:
 
     menu_index size() const noexcept override
     {
+        //return static_cast<menu_index>(static_cast<std::uint32_t>(widget_.items_.size()));
         return static_cast<menu_index>(widget_.items_.size());
     }
 
