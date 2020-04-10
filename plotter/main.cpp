@@ -58,8 +58,8 @@ int main()
 {
     std::atomic_bool exit{false};
 
-    message_queue to_main{"/ev3plotter_input"};
-    message_queue to_console{"/ev3plotter_output"};
+    message_queue read_queue{"/ev3plotter_input", type_safe::flag_set<message_queue::option>{message_queue::option::read}};
+    message_queue write_queue{"/ev3plotter_output", message_queue::option::write};
 
     std::thread main{
         [&]() {

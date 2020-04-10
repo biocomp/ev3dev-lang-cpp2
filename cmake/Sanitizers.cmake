@@ -1,8 +1,5 @@
 
 function(enable_sanitizers project_name)
-
-    message ("## 1 ENABLE_SANITIZER_ADDRESS = ${ENABLE_SANITIZER_ADDRESS}")
-
   if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL
                                              "Clang")
     option(ENABLE_COVERAGE "Enable coverage reporting for gcc/clang" FALSE)
@@ -13,8 +10,6 @@ function(enable_sanitizers project_name)
     endif()
 
     set(SANITIZERS "")
-
-    message ("## 2 ENABLE_SANITIZER_ADDRESS = ${ENABLE_SANITIZER_ADDRESS}")
 
     option(ENABLE_SANITIZER_ADDRESS "Enable address sanitizer" FALSE)
     if(ENABLE_SANITIZER_ADDRESS)
@@ -37,18 +32,11 @@ function(enable_sanitizers project_name)
       list(APPEND SANITIZERS "thread")
     endif()
 
-    message ("## 1 SANITIZERS = ${SANITIZERS}, LIST_OF_SANITIZERS = ${LIST_OF_SANITIZERS}")
     string(REPLACE ";" "," LIST_OF_SANITIZERS "${SANITIZERS}")
-    #JOINN(${SANITIZERS} ";" LIST_OF_SANITIZERS)
-    message ("## 2 SANITIZERS = ${SANITIZERS}, LIST_OF_SANITIZERS = ${LIST_OF_SANITIZERS}")
-
   endif()
 
-  message("Checking sanitizers: ${LIST_OF_SANITIZERS}")
   if(LIST_OF_SANITIZERS)
-    message("Gonna use them sanitizers1: ${LIST_OF_SANITIZERS}")
     if(NOT "${LIST_OF_SANITIZERS}" STREQUAL "")
-      message("Gonna use them sanitizers2: ${LIST_OF_SANITIZERS}")
       target_compile_options(${project_name}
                              INTERFACE -fsanitize=${LIST_OF_SANITIZERS})
       target_link_libraries(${project_name}

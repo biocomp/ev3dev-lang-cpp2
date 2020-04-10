@@ -12,11 +12,13 @@ public:
         return widget_.name_;
     }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wuseless-cast"
     menu_index size() const noexcept override
     {
-        //return static_cast<menu_index>(static_cast<std::uint32_t>(widget_.items_.size()));
-        return static_cast<menu_index>(widget_.items_.size());
+        return static_cast<menu_index>(static_cast<std::uint32_t>(widget_.items_.size()));
     }
+#pragma GCC diagnostic pop
 
     void loop_over_elements(menu_index from, menu_index to, std::function<bool(menu_index, std::string_view, has_more)> callback) const noexcept  override {
         auto index = static_cast<decltype(items_)::difference_type>(from.get());

@@ -16,6 +16,7 @@ namespace ev3plotter {
         };
 
         message_queue(const char *name, type_safe::flag_set<option> options);
+        ~message_queue();
 
     private:
         class impl;
