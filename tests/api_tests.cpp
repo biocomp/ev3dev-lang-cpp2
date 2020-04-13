@@ -36,7 +36,11 @@ namespace
             bool is_open() const override { return true; }
             void close() override {  }
             void clear() override {  }
-            void prepare(const std::string&) override {}
+
+            void prepare(const std::string&) override {
+                _stream.clear(); // clear the `failbit` and `eofbit`
+                _stream.seekg(0);
+            }
 
             std::istream& get() override { return _stream; }
             const std::istream& get() const override { return _stream; }

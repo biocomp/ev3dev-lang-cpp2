@@ -67,5 +67,6 @@
         "pointers": "cpp",
         "csignal": "cpp",
         "unordered_set": "cpp"
-    }
+    },
+    "editor.formatOnType": true
 }
