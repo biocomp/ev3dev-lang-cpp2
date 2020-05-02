@@ -8,15 +8,16 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceRoot}/build/tests/api_tests",
+            "program": "${workspaceRoot}/build/plotter_tests/plotter_tests",
             //"args": [],
             //"args": ["Rectangle tests", "-c", "Beyond y"],
-            "args": ["Medium Motor"],
+            "args": ["home() will run all motors till they stall and report stalled values"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             "externalConsole": false,
             "MIMode": "gdb",
+            //"preLaunchTask": "g++ build active file",
             "setupCommands": [
                 {
                     "description": "Enable pretty-printing for gdb",

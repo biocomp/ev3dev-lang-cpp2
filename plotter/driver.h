@@ -39,18 +39,23 @@ namespace ev3plotter {
         raw_pos y_max{0};
     };
 
+    class Scheduler;
+
     struct state {
+        state(Scheduler& scheduler, ev3dev::ISystem& sys = ev3dev::default_system) : scheduler_{scheduler}, tool_motor{ev3dev::OUTPUT_A, sys},x_motor{ev3dev::OUTPUT_B, sys}, y_motor{ev3dev::OUTPUT_C, sys} {}
+
         std::unique_ptr<IWidget::widget_state> widget_;
         bool changed_{false};
         std::optional<homing_results> homed_;
+        Scheduler& scheduler_;
 
         button down_button{ev3dev::button::down};
         button up_button{ev3dev::button::up};
         button ok_button{ev3dev::button::enter};
 
-        ev3dev::medium_motor tool_motor{ev3dev::OUTPUT_A};
-        ev3dev::large_motor x_motor{ev3dev::OUTPUT_B};
-        ev3dev::large_motor y_motor{ev3dev::OUTPUT_C};
+        ev3dev::medium_motor tool_motor;
+        ev3dev::large_motor x_motor;
+        ev3dev::large_motor y_motor;
 
         void handle_events();
         void set_widget(std::unique_ptr<IWidget::widget_state> widget);
@@ -61,8 +66,8 @@ namespace ev3plotter {
     std::string print_homing_results(const homing_results &results);
 
     namespace commands {
-        homing_results home(state &s, ev3plotter::display &d, const IWidget &prevWidget);
-        void go(state &s, std::optional<raw_pos> x, std::optional<raw_pos> y, std::optional<raw_pos> z);
+        void home(state &s, Scheduler& scheduler, const IWidget &prevWidget, std::function<void(homing_results)> done);
+        void go(state &s, Scheduler& scheduler, std::optional<raw_pos> x, std::optional<raw_pos> y, std::optional<raw_pos> z, std::function<void()> done);
     }
 
     namespace pos {

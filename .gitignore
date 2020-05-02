@@ -3,5 +3,7 @@
 bin
 lib
 obj
-build
+build/
 Testing/
+.vs/
+out/

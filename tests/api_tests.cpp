@@ -168,7 +168,6 @@ namespace
             {"time_sp", "1000"}
         }}
     };
-
 }
 
 TEST_CASE( "Device" ) {
