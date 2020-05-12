@@ -24,10 +24,6 @@ namespace ev3plotter {
         bool prev_pressed_{false};
     };
 
-    using raw_pos = StrongInt<int, struct RawPosTag>;
-    using normalized_pos = StrongInt<int, struct NormalizedTag>;
-    using mm_pos = StrongInt<int, struct MmPosTag>;
-
     struct homing_results{
         raw_pos tool_up_pos{0};
         raw_pos tool_down_pos{0};
@@ -74,13 +70,29 @@ namespace ev3plotter {
         namespace detail {
             raw_pos to_raw(raw_pos min, raw_pos max, normalized_pos val);
             normalized_pos to_norm(raw_pos min, raw_pos max, raw_pos val);
+
+            template <typename T> T constexpr clamp(T min, T max, T val) noexcept {
+                return (min < max) ? std::clamp(val, min, max) : std::clamp(val, max, min);
+            }
         }
         raw_pos x(const homing_results &h, normalized_pos val);
         raw_pos y(const homing_results &h, normalized_pos val);
         raw_pos z(const homing_results &h, normalized_pos val);
+
+        normalized_pos advanced_x(const state& s, normalized_pos by) noexcept;
+        normalized_pos advanced_y(const state& s, normalized_pos by) noexcept;
+        normalized_pos advanced_z(const state& s, normalized_pos by) noexcept;
+
+        raw_pos advanced_x(const state& s, raw_pos by) noexcept;
+        raw_pos advanced_y(const state& s, raw_pos by) noexcept;
+        raw_pos advanced_z(const state& s, raw_pos by) noexcept;
+
         normalized_pos read_x(const state &s) noexcept;
         normalized_pos read_y(const state& s) noexcept;
         normalized_pos read_z(const state& s) noexcept;
+
+        normalized_pos x_travel(const homing_results &h) noexcept;
+        normalized_pos y_travel(const homing_results &h) noexcept;
         normalized_pos z_travel(const homing_results &h) noexcept;
     } // namespace pos
 }

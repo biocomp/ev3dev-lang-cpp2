@@ -3,9 +3,6 @@ cmake_minimum_required(VERSION 3.1)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Static linking of GLIBC + magic to make std::thread work.
-# set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pthread -Wl,--whole-archive -lpthread -Wl,--no-whole-archive -static")
-
 project(ev3dev-lang-cpp)
 include(cmake/StandardProjectSettings.cmake)
 
@@ -43,6 +40,7 @@ add_subdirectory(third_party/fmt)
 add_subdirectory(third_party/debug_assert)
 add_subdirectory(third_party/type_safe)
 add_subdirectory(third_party/gsl)
+add_subdirectory(third_party/outcome)
 add_subdirectory(tests)
 add_subdirectory(plotter_client)
 add_subdirectory(plotter)

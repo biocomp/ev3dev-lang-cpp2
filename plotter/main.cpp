@@ -5,7 +5,7 @@
 #include <ev3dev.h>
 #include <functional>
 #include <iostream>
-#include <mqueue/message_queue.h>
+#include "server.h"
 #include <mutex>
 #include <numeric>
 #include <scheduler.h>
@@ -18,16 +18,16 @@
 using namespace ev3plotter;
 
 namespace {
-constexpr const std::size_t c_maxMessageSize{256};
 }
 
 int main() {
     std::atomic_bool exit{false};
 
-    message_queue read_queue{"/ev3plotter_input",
-                             c_maxMessageSize,
-                             message_queue::option::read | message_queue::option::remove_on_destruction};
-    message_queue write_queue{"/ev3plotter_output", c_maxMessageSize, message_queue::option::write};
+    std::optional<Server> server;
+    try 
+    {
+        server.emplace();
+    } catch (const std::runtime_error&) {};
 
     Scheduler sch{};
 
@@ -104,25 +104,34 @@ int main() {
          {"y+10",
           [&] {
               if_homed([&] {
-                  commands::go(s, sch, pos::y(*s.homed_, pos::read_y(s) + normalized_pos{10}), {}, {}, nullptr);
+                  commands::go(s, sch, {}, pos::y(*s.homed_, pos::read_y(s) + normalized_pos{10}), {}, nullptr);
               });
           }},
          {"y+100",
           [&] {
               if_homed([&] {
-                  commands::go(s, sch, pos::y(*s.homed_, pos::read_y(s) + normalized_pos{100}), {}, {}, nullptr);
+                  commands::go(s, sch, {}, pos::y(*s.homed_, pos::read_y(s) + normalized_pos{100}), {}, nullptr);
               });
           }},
          {"y-10",
           [&] {
               if_homed([&] {
-                  commands::go(s, sch, pos::y(*s.homed_, pos::read_y(s) + normalized_pos{-10}), {}, {}, nullptr);
+                  commands::go(s, sch, {}, pos::y(*s.homed_, pos::read_y(s) + normalized_pos{-10}), {}, nullptr);
               });
           }},
          {"y-100",
           [&] {
+              if_homed([&] { commands::go(s, sch, {}, raw_pos{s.x_motor.position() - 100}, {}, nullptr);
+              });
+          }},{"x+100,y+100",
+          [&] {
               if_homed([&] {
-                  commands::go(s, sch, pos::y(*s.homed_, pos::read_y(s) + normalized_pos{-100}), {}, {}, nullptr);
+                  commands::go(s, sch, raw_pos{s.x_motor.position() + 100}, raw_pos{s.y_motor.position() + 100}, {}, nullptr);
+              });
+          }},{"x+100,y-100",
+          [&] {
+              if_homed([&] {
+                  commands::go(s, sch, raw_pos{s.x_motor.position() + 100}, raw_pos{s.y_motor.position() - 100}, {}, nullptr);
               });
           }},
          {"Tool up",
@@ -166,6 +175,12 @@ int main() {
     std::function<void()> loop;
     loop = [&] {
         s.handle_events();
+
+        if (server) {
+            server->handle_events([](auto&& /*message*/, auto&& callback) {
+                callback(HandlerError{"Parsing succeeded, but I can't handle this!"});
+            });
+        }
 
         const auto now = Scheduler::clock::now();
 

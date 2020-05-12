@@ -29,7 +29,7 @@
         },
         {
             "name": "ev3-Debug",
-            "generator": "Unix Makefiles",
+            "generator": "Ninja",
             "configurationType": "Debug",
             "buildRoot": "${projectDir}\\out\\build\\${name}",
             "installRoot": "${projectDir}\\out\\install\\${name}",
@@ -38,10 +38,26 @@
             "buildCommandArgs": "",
             "ctestCommandArgs": "",
             "inheritEnvironments": [ "linux_x64" ],
-            "wslPath": "C:\\Users\\Tema\\AppData\\Local\\Microsoft\\WindowsApps\\ubuntu.exe",
+            "wslPath": "${defaultWSLPath}",
             "addressSanitizerRuntimeFlags": "detect_leaks=0",
             "variables": [],
-            "cmakeToolchain": "${projectDir}\\cmake\\ev3.toolchain.cmake"
+            "cmakeToolchain": "./cmake/ev3.toolchain"
+        },
+        {
+            "name": "ev3-Release",
+            "generator": "Ninja",
+            "configurationType": "Release",
+            "buildRoot": "${projectDir}\\out\\build\\${name}",
+            "installRoot": "${projectDir}\\out\\install\\${name}",
+            "cmakeExecutable": "/usr/bin/cmake",
+            "cmakeCommandArgs": "",
+            "buildCommandArgs": "",
+            "ctestCommandArgs": "",
+            "inheritEnvironments": [ "linux_x64" ],
+            "wslPath": "${defaultWSLPath}",
+            "addressSanitizerRuntimeFlags": "detect_leaks=0",
+            "variables": [],
+            "cmakeToolchain": "./cmake/ev3.toolchain"
         }
     ]
 }

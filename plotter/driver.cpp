@@ -4,6 +4,7 @@
 
 #include <fmt/core.h>
 #include <fmt/ostream.h>
+#include <fmt/ranges.h>
 #include <thread>
 
 using namespace ev3plotter;
@@ -114,18 +115,29 @@ void commands::home(
             Scheduler& scheduler,
             const IWidget& prevWidget,
             std::function<void(homing_results)> done)
-            : homing_message_{[&]() {
-                if (s.tool_motor.connected()) {
+            : 
+            isValid_ {s.tool_motor.connected() && s.x_motor.connected() && s.y_motor.connected()},
+            homing_message_{[&]() {
+                if (isValid_) {
                     return Message{"Homing, please wait...", make_step_text(current_step_, "tool up"), "Stop", [this] {
-                                       finish();
+                                       finish(true);
                                    }};
                 } else {
-                    return Message{"Homing failed :(", "Tool motor not connected!\n", "Stop", [this] { finish(); }};
+                    std::vector<std::string> notConnected{};
+                    if (! s.tool_motor.connected()) {
+                        notConnected.push_back("tool");
+                    }
+                    if (! s.x_motor.connected()) {
+                        notConnected.push_back("x");
+                    }
+                    if (! s.y_motor.connected()) {
+                        notConnected.push_back("y");
+                    }
+                    return Message{"Homing failed :(", fmt::format("{} motor\nnot connected!\n", notConnected), "Stop", [this] { finish(false); }};
                 }
             }()}
-
             , s_{s}
-            , scheduler_{scheduler} //, d_{d}
+            , scheduler_{scheduler}
             , prevWidget_{prevWidget}
             , done_{std::move(done)}
             {
@@ -194,12 +206,17 @@ void commands::home(
 
             case home::stop:
                 return done_(results_);
+            
+            case home::stop_failed:
+                return;
             }
 
             scheduler_.schedule(std::chrono::milliseconds{10}, [this_ = shared_from_this()]{ this_->step(); });
         }
 
       private:
+        bool isValid_;
+
         enum class home {
             start,
             homing_tool_up,
@@ -211,18 +228,17 @@ void commands::home(
             homing_tool_down,
             show_results,
             showing_results,
-            stop
-        } local_state_{home::start};
+            stop,
+            stop_failed
+        } local_state_{isValid_ ? home::start : home::showing_results};
 
         int current_step_{1};
-
 
         Message homing_message_;
 
         homing_results results_;
 
-        Message results_message{"Homing results:", "", "Exit", [this] { finish(); }};
-
+        Message results_message{"Homing results:", "", "Exit", [this] { finish(true); }};
 
         state& s_;
         Scheduler& scheduler_;
@@ -235,9 +251,13 @@ void commands::home(
                 "\nPress 'ok' to stop.";
         }
 
-        void finish() {
+        void finish(bool success) {
             s_.set_widget(prevWidget_.make());
-            local_state_ = home::stop;
+            if (success) {
+                local_state_ = home::stop;
+            } else {
+                local_state_ = home::stop_failed;
+            }
         }
 
         auto has_state(ev3dev::motor& motor, const std::string& state) {
@@ -298,15 +318,15 @@ void commands::go(
             , z_{z}
             , done_{std::move(done)} {
             if (x) {
-                s.x_motor.set_duty_cycle_sp(100).set_speed_sp(100).set_position_sp(x->get()).run_to_abs_pos();
+                s.x_motor.set_stop_action("hold").set_speed_sp(200).set_position_sp(x->get()).run_to_abs_pos();
             }
 
             if (y) {
-                s.y_motor.set_duty_cycle_sp(100).set_speed_sp(100).set_position_sp(y->get()).run_to_abs_pos();
+                s.y_motor.set_stop_action("hold").set_speed_sp(200).set_position_sp(y->get()).run_to_abs_pos();
             }
 
             if (z) {
-                s.tool_motor.set_duty_cycle_sp(100).set_speed_sp(100).set_position_sp(z->get()).run_to_abs_pos();
+                s.tool_motor.set_stop_action("hold").set_speed_sp(200).set_position_sp(z->get()).run_to_abs_pos();
             }
         }
 
@@ -383,6 +403,32 @@ normalized_pos pos::read_z(const state& s) noexcept {
     return detail::to_norm(s.homed_->tool_down_pos, s.homed_->tool_up_pos, raw_pos{s.tool_motor.position()});
 }
 
+normalized_pos pos::advanced_x(const state& s, normalized_pos by) noexcept {
+    return detail::clamp(read_x(s) + by, normalized_pos{0}, x_travel(*s.homed_));
+}
+
+normalized_pos pos::advanced_y(const state& s, normalized_pos by) noexcept {
+    return detail::clamp(read_y(s) + by, normalized_pos{0}, y_travel(*s.homed_));
+}
+
+normalized_pos pos::advanced_z(const state& s, normalized_pos by) noexcept {
+    return detail::clamp(read_z(s) + by, normalized_pos{0}, z_travel(*s.homed_));
+}
+
+raw_pos pos::advanced_x(const state& s, raw_pos by) noexcept {
+    return detail::clamp(raw_pos{s.x_motor.position()} + by, s.homed_->x_min, s.homed_->x_max);
+}
+
+raw_pos pos::advanced_y(const state& s, raw_pos by) noexcept {
+    return detail::clamp(raw_pos{s.y_motor.position()} + by, s.homed_->y_min, s.homed_->y_max);
+}
+
+raw_pos pos::advanced_z(const state& s, raw_pos by) noexcept {
+    return detail::clamp(raw_pos{s.tool_motor.position()} + by, s.homed_->tool_up_pos, s.homed_->tool_down_pos);
+}
+
+normalized_pos pos::x_travel(const homing_results& h) noexcept { return normalized_pos{std::abs((h.x_min - h.x_max).get())}; }
+normalized_pos pos::y_travel(const homing_results& h) noexcept { return normalized_pos{std::abs((h.y_min - h.y_max).get())}; }
 normalized_pos pos::z_travel(const homing_results& h) noexcept {
     return normalized_pos{std::abs((h.tool_down_pos - h.tool_up_pos).get())};
 }
