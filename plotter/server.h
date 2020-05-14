@@ -15,17 +15,21 @@ class Scheduler;
 
 enum class GCodeCommand { 
     Unknown,
-    Go 
+    Go,
+    UseInches,
+    UseMm,
+    Home,
+    AbsolutePositioning,
+    RelativePositioning
 };
 
 struct ServerMessage {
     GCodeCommand Command{GCodeCommand::Unknown};
-    std::string Raw;
-
-    std::optional<mm_pos> X;
-    std::optional<mm_pos> Y{0};
-    std::optional<mm_pos> Z{0};
-    std::optional<mm_pos> F{0};
+    
+    std::optional<double> X;
+    std::optional<double> Y;
+    std::optional<double> Z;
+    std::optional<double> F;
 };
 
 struct HandlerError {
