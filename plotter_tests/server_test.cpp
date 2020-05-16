@@ -4,6 +4,7 @@
 #include <fmt/format.h>
 
 using namespace ev3plotter;
+using namespace Catch::literals;
 
 namespace {
     ServerMessage parse_and_expect_message(std::string_view message) {
@@ -33,10 +34,10 @@ TEST_CASE("Parsing G0/G1") {
 
         const auto message{parse_and_expect_message(fmt::format("{} X1.1 Y2.2 Z-3.3 F100.1", command))};
         REQUIRE(message.Command == GCodeCommand::Go);
-        REQUIRE(*message.X == 1.1);
-        REQUIRE(*message.Y == 2.2);
-        REQUIRE(*message.Z == -3.3);
-        REQUIRE(*message.F == 100.1);
+        REQUIRE(*message.X == 1.1_a);
+        REQUIRE(*message.Y == 2.2_a);
+        REQUIRE(*message.Z == -3.3_a);
+        REQUIRE(*message.F == 100.1_a);
     }};
 
     runTest("G0");
@@ -48,13 +49,13 @@ TEST_CASE("Parsing G0/G1") {
 TEST_CASE("Parsing incomplete G0") {
     const auto message{parse_and_expect_message("G0 X1.1 Z-3.3")};
     REQUIRE(message.Command == GCodeCommand::Go);
-    REQUIRE(*message.X == 1.1);
+    REQUIRE(*message.X == 1.1_a);
     REQUIRE(!message.Y.has_value());
-    REQUIRE(*message.Z == -3.3);
+    REQUIRE(*message.Z == -3.3_a);
     REQUIRE(!message.F.has_value());
 }
 
-TEST_CASE("G0 failures") { 
+TEST_CASE("G0 failures") {
     parse_and_expect_error("G", "Could not parse '' command number");
     parse_and_expect_error("G X10", "Could not parse '' command number");
     parse_and_expect_error("Ga X10", "Could not parse 'a' command number");
@@ -83,9 +84,9 @@ TEST_CASE("Parsing 'G28 X Z' command") {
     const auto message{parse_and_expect_message("G28 X Z")};
     REQUIRE(message.Command == GCodeCommand::Home);
 
-    REQUIRE(*message.X == 1.);
+    REQUIRE(*message.X == 1._a);
     REQUIRE(!message.Y.has_value());
-    REQUIRE(*message.Z == 1.);
+    REQUIRE(*message.Z == 1._a);
 }
 
 TEST_CASE("G28 failures") {

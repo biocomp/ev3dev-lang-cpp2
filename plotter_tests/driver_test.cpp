@@ -193,8 +193,8 @@ TEST_CASE("home() will run all motors till they stall and report stalled values"
             }
         }};
 
-        switch (step) { 
-        case 0: 
+        switch (step) {
+        case 0:
             REQUIRE(sys.get_motor(tool_motor).get("command") == "resetrun-direct");
             sys.get_motor(tool_motor).set("position", "-30");
             sys.get_motor(tool_motor).set("state", "running stalled");
@@ -218,7 +218,7 @@ TEST_CASE("home() will run all motors till they stall and report stalled values"
 
         case 3:
             sys.get_motor(x_motor).set("state", "stopped");
-            
+
             REQUIRE(sys.get_motor(y_motor).get("command") == "resetrun-direct");
             sys.get_motor(y_motor).set("position", "-1000");
             sys.get_motor(y_motor).set("state", "running stalled");
@@ -231,14 +231,14 @@ TEST_CASE("home() will run all motors till they stall and report stalled values"
             sys.get_motor(y_motor).set("position", "1000");
             sys.get_motor(y_motor).set("state", "running stalled");
             break;
-            
+
         case 5:
             // Supposed to be going for better tool down homing position. But doesn't yet.
             break;
 
         case 6:
             sys.get_motor(y_motor).set("state", "stopped");
-            
+
             REQUIRE(sys.get_motor(tool_motor).get("command") == "resetrun-directstoprun-direct");
             sys.get_motor(tool_motor).set("position", "40");
             sys.get_motor(tool_motor).set("state", "running stalled");
@@ -254,7 +254,7 @@ TEST_CASE("home() will run all motors till they stall and report stalled values"
         default:
             break;
         }
-        
+
         ++step;
     }};
 
@@ -268,7 +268,7 @@ TEST_CASE("home() will run all motors till they stall and report stalled values"
     homing_results results;
     commands::home(s, scheduler, widget, [&](auto&& r) {
         done = true;
-        results = r;
+        results = std::get<0>(r);
     });
 
     scheduler.run();

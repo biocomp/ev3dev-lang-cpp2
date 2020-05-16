@@ -6,7 +6,10 @@
 #include <fmt/ostream.h>
 #include <fmt/ranges.h>
 #include <thread>
+#include <variant>
+#include <string>
 
+using namespace std::string_literals;
 using namespace ev3plotter;
 
 // ###############
@@ -107,15 +110,15 @@ void commands::home(
     state& s,
     Scheduler& scheduler,
     const IWidget& prevWidget,
-    std::function<void(homing_results)> done) {
+    std::function<void(std::variant<homing_results, std::string>)> done) {
     class HomeState : public std::enable_shared_from_this<HomeState> {
       public:
         HomeState(
             state& s,
             Scheduler& scheduler,
             const IWidget& prevWidget,
-            std::function<void(homing_results)> done)
-            : 
+            std::function<void(std::variant<homing_results, std::string>)> done)
+            :
             isValid_ {s.tool_motor.connected() && s.x_motor.connected() && s.y_motor.connected()},
             homing_message_{[&]() {
                 if (isValid_) {
@@ -206,9 +209,9 @@ void commands::home(
 
             case home::stop:
                 return done_(results_);
-            
+
             case home::stop_failed:
-                return;
+                return done_("Homing failed!"s);
             }
 
             scheduler_.schedule(std::chrono::milliseconds{10}, [this_ = shared_from_this()]{ this_->step(); });
@@ -244,7 +247,7 @@ void commands::home(
         Scheduler& scheduler_;
         const IWidget& prevWidget_;
 
-        std::function<void(homing_results)> done_;
+        std::function<void(std::variant<homing_results, std::string>)> done_;
 
         static std::string make_step_text(int& current_step, std::string stepText) {
             return std::string{"Step"} + std::to_string(current_step++) + " of 6: " + stepText +

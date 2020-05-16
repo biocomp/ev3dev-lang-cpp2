@@ -4,6 +4,11 @@
 #include <ev3dev.h>
 #include "common_definitions.h"
 #include "widgets.h"
+#include "gcode_state.h"
+
+#include <functional>
+#include <variant>
+#include <string>
 
 namespace ev3plotter {
     struct button {
@@ -44,6 +49,7 @@ namespace ev3plotter {
         bool changed_{false};
         std::optional<homing_results> homed_;
         Scheduler& scheduler_;
+        GCodeState gcode_state_;
 
         button down_button{ev3dev::button::down};
         button up_button{ev3dev::button::up};
@@ -62,7 +68,7 @@ namespace ev3plotter {
     std::string print_homing_results(const homing_results &results);
 
     namespace commands {
-        void home(state &s, Scheduler& scheduler, const IWidget &prevWidget, std::function<void(homing_results)> done);
+        void home(state &s, Scheduler& scheduler, const IWidget &prevWidget, std::function<void(std::variant<homing_results, std::string>)> done);
         void go(state &s, Scheduler& scheduler, std::optional<raw_pos> x, std::optional<raw_pos> y, std::optional<raw_pos> z, std::function<void()> done);
     }
 

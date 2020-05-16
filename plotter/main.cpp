@@ -15,16 +15,118 @@
 #include <type_traits>
 #include <widgets.h>
 
+#include <fmt/format.h>
+
 using namespace ev3plotter;
 
 namespace {
-}
+    std::optional<raw_pos> calc_x(const state& state, std::optional<double> x)
+    {
+        if (! x) {
+            return {};
+        }
+
+        const auto& scale{state.gcode_state_.use_mm ? state.gcode_state_.c_stepsToMm : state.gcode_state_.c_stepsToInches };
+        const auto relative_steps{*x / scale[0]};
+
+        if (state.gcode_state_.relative_moves) {
+            return pos::x(*state.homed_, pos::advanced_x(state, normalized_pos{static_cast<int>(relative_steps)}));
+        } else {
+            return pos::x(*state.homed_, normalized_pos{static_cast<int>(relative_steps)});
+        }
+    }
+
+    std::optional<raw_pos> calc_y(const state& state, std::optional<double> y)
+    {
+        if (! y) {
+            return {};
+        }
+
+        const auto& scale{state.gcode_state_.use_mm ? state.gcode_state_.c_stepsToMm : state.gcode_state_.c_stepsToInches };
+        const auto relative_steps{*y / scale[1]};
+
+        if (state.gcode_state_.relative_moves) {
+            return pos::y(*state.homed_, pos::advanced_y(state, normalized_pos{static_cast<int>(relative_steps)}));
+        } else {
+            return pos::y(*state.homed_, normalized_pos{static_cast<int>(relative_steps)});
+        }
+    }
+
+    std::optional<raw_pos> calc_z(const state& state, std::optional<double> z)
+    {
+        if (! z) {
+            return {};
+        }
+
+        const auto& scale{state.gcode_state_.use_mm ? state.gcode_state_.c_stepsToMm : state.gcode_state_.c_stepsToInches };
+        const auto relative_steps{*z / scale[2]};
+
+        if (state.gcode_state_.relative_moves) {
+            return pos::z(*state.homed_, pos::advanced_z(state, normalized_pos{static_cast<int>(relative_steps)}));
+        } else {
+            return pos::z(*state.homed_, normalized_pos{static_cast<int>(relative_steps)});
+        }
+    }
+
+    void handle_server_event(
+        state& state,
+        const ServerMessage& message,
+        const ev3plotter::IWidget& prevWidget,
+        std::function<void(const std::optional<HandlerError>&)> handler) {
+        switch (message.Command) {
+        case GCodeCommand::Go:
+            commands::go(
+                state,
+                state.scheduler_,
+                calc_x(state, message.X),
+                calc_y(state, message.Y),
+                calc_z(state, message.Z),
+                [handler] { handler({}); });
+            break;
+
+        case GCodeCommand::UseInches:
+            state.gcode_state_.use_mm = false;
+            handler({});
+            break;
+
+        case GCodeCommand::UseMm:
+            state.gcode_state_.use_mm = true;
+            handler({});
+            break;
+
+        case GCodeCommand::Home:
+            commands::home(state, state.scheduler_, prevWidget, [handler, &state] (auto homing_results) {
+                if (homing_results.index() == 0) {
+                    state.homed_ = std::get<0>(homing_results);
+                    handler({});
+                } else {
+                    handler(HandlerError{std::get<1>(homing_results)});
+                }
+            });
+            break;
+
+        case GCodeCommand::AbsolutePositioning:
+            state.gcode_state_.relative_moves = false;
+            handler({});
+            break;
+
+        case GCodeCommand::RelativePositioning:
+            state.gcode_state_.relative_moves = true;
+            handler({});
+            break;
+
+        default:
+            handler(HandlerError{fmt::format("Don't know how to handle {} command", message.Command)});
+            break;
+        }
+    }
+} // namespace
 
 int main() {
     std::atomic_bool exit{false};
 
     std::optional<Server> server;
-    try 
+    try
     {
         server.emplace();
     } catch (const std::runtime_error&) {};
@@ -153,9 +255,11 @@ int main() {
     StaticMenu main_menu{"Main menu",
                          {{"home",
                            [&]() {
-                               commands::home(s, sch, *main_menu_ptr, [&](homing_results results) {
-                                   s.homed_ = results;
-                                   show_homing_results.update_text(print_homing_results(*s.homed_));
+                               commands::home(s, sch, *main_menu_ptr, [&](auto results) {
+                                  if (results.index() == 0) {
+                                      s.homed_ = std::get<0>(results);
+                                      show_homing_results.update_text(print_homing_results(*s.homed_));
+                                  }
                                });
                            }},
                           {"display required connections", [&]() { s.set_widget(message.make()); }},
@@ -177,8 +281,9 @@ int main() {
         s.handle_events();
 
         if (server) {
-            server->handle_events([](auto&& /*message*/, auto&& callback) {
-                callback(HandlerError{"Parsing succeeded, but I can't handle this!"});
+            server->handle_events([&](auto&& msg, auto&& callback) {
+                handle_server_event(s, std::forward<decltype(msg)>(msg), *main_menu_ptr, std::forward<decltype(callback)>(callback));
+                //callback(HandlerError{"Parsing succeeded, but I can't handle this!"});
             });
         }
 

@@ -1,4 +1,4 @@
-add_library(plotter_lib STATIC widgets.cpp widgets.h common_definitions.h display.cpp display.h driver.h driver.cpp scheduler.h server.h server.cpp)
+add_library(plotter_lib STATIC widgets.cpp widgets.h common_definitions.h display.cpp display.h driver.h driver.cpp scheduler.h server.h server.cpp gcode_state.h)
 target_include_directories(plotter_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(plotter_lib PUBLIC ev3dev project_warnings project_options named_type_lib fmt::fmt mqueue_lib)
 
