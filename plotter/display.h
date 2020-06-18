@@ -29,26 +29,33 @@ namespace ev3plotter
 
     struct display {
         display(unsigned char* buffer_, int width_, int height_) :
-            buffer{buffer_}, width{width_}, height{height_}, m_tempBuffer(static_cast<std::size_t>(width_*height_*4), 0xff)
+            buffer{buffer_}, width{width_ != 0 ? width_ : 100}, height{height_ != 0 ? height_ : 100}
         {
             assert(width_ >= 0);
             assert(height_ >= 0);
         }
 
         void set(point p, rect crop, bool val) {
-            if (p.x < std::max(crop.topLeft.x, 0) || p.x > std::min(width-1, crop.bottomRight.x)) { return; }
-            if (p.y < std::max(crop.topLeft.y, 0) || p.y > std::min(height-1, crop.bottomRight.y)) { return; }
+            if (buffer) { // To allow for partial testing on WSL, where display is not working.
+                if (p.x < std::max(crop.topLeft.x, 0) || p.x > std::min(width - 1, crop.bottomRight.x)) {
+                    return;
+                }
+                if (p.y < std::max(crop.topLeft.y, 0) || p.y > std::min(height - 1, crop.bottomRight.y)) {
+                    return;
+                }
 
-            const auto index = (p.y * width + p.x) * 4;
-            const auto color = static_cast<unsigned char>(val ? 0 : 0xff); // 0xff is used for empty pixels for some reason.
+                const auto index = (p.y * width + p.x) * 4;
+                const auto color =
+                    static_cast<unsigned char>(val ? 0 : 0xff); // 0xff is used for empty pixels for some reason.
 
-            assert(index >= 0);
-            assert(index < (width*height*4) - 3);
+                assert(index >= 0);
+                assert(index < (width * height * 4) - 3);
 
-            buffer[index] = color;
-            buffer[index+1] = color;
-            buffer[index+2] = color;
-            buffer[index+3] = color;
+                buffer[index] = color;
+                buffer[index + 1] = color;
+                buffer[index + 2] = color;
+                buffer[index + 3] = color;
+            }
         }
 
         void set(point p, bool val) {
@@ -56,14 +63,17 @@ namespace ev3plotter
         }
 
         void fill(bool val) {
-            std::fill(buffer, buffer + width*height*4, val ? 0 : 0xff);
+            if (buffer) {
+                std::fill(buffer, buffer + width * height * 4, val ? 0 : 0xff);
+            }
         }
 
+    private:
         unsigned char* buffer;
-        int width;
-        int height;
 
-        std::vector<unsigned char> m_tempBuffer;
+    public:
+        const int width;
+        const int height;
     };
 
     void fill(display &d, rect points, bool color) noexcept;

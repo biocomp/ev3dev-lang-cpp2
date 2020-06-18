@@ -75,13 +75,20 @@ namespace {
         std::function<void(const std::optional<HandlerError>&)> handler) {
         switch (message.Command) {
         case GCodeCommand::Go:
-            commands::go(
-                state,
-                state.scheduler_,
-                calc_x(state, message.X),
-                calc_y(state, message.Y),
-                calc_z(state, message.Z),
-                [handler] { handler({}); });
+            if (state.homed_) {
+                auto [speed_x, speed_y] = pos::calc_speeds(state, message.X, message.Y);
+                commands::go(
+                    state,
+                    state.scheduler_,
+                    calc_x(state, message.X),
+                    calc_y(state, message.Y),
+                    calc_z(state, message.Z),
+                    speed_x,
+                    speed_y,
+                    [handler] { handler({}); });
+            } else {
+                handler(HandlerError{"Can't go - not homed!"});
+            }
             break;
 
         case GCodeCommand::UseInches:

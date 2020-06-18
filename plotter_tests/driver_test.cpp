@@ -166,6 +166,71 @@ public:
 };
 } // namespace
 
+TEST_CASE("calculate_speeds() for relative speeds") {
+    constexpr const int c_defaultSpeed{200};
+    Scheduler sch;
+    MockSystem sys;
+    state s{sch, sys};
+    s.gcode_state_.relative_moves = true;
+    s.gcode_state_.use_mm = true;
+
+    struct TestData {
+        std::string description;
+        std::optional<double> x, y;
+        int expected_x_speed, expected_y_speed;
+    };
+
+    for (auto&& t : {
+             TestData{"No x or y coordinates - speeds are 0es", {}, {}, 0, 0},
+             TestData{"Only x", 123, {}, c_defaultSpeed, 0},
+             TestData{"Only -x", -123, {}, c_defaultSpeed, 0},
+             TestData{"Only y", {}, 123, 0, c_defaultSpeed},
+             TestData{"Only -y", {}, -123, 0, c_defaultSpeed},
+             TestData{"x == y", 42.0*s.gcode_state_.c_stepsToMm[0], 42.0*s.gcode_state_.c_stepsToMm[1], 141, 141}, // 141 is 141.421356237 cast to int.
+             TestData{"x == -y", 42.0*s.gcode_state_.c_stepsToMm[0], -42.0*s.gcode_state_.c_stepsToMm[1], 141, 141},
+             TestData{"-x == -y", -42.0*s.gcode_state_.c_stepsToMm[0], -42.0*s.gcode_state_.c_stepsToMm[1], 141, 141},
+             TestData{"x == y/6", 42.0*s.gcode_state_.c_stepsToMm[0], -7.0*s.gcode_state_.c_stepsToMm[1], 33, 5},
+         }) {
+        SECTION(t.description) {
+            const auto speeds{pos::calc_speeds(s, t.x, t.y)};
+            REQUIRE(speeds.x == t.expected_x_speed);
+            REQUIRE(speeds.y == t.expected_y_speed);
+        }
+    }
+}
+TEST_CASE("calculate_speeds() for absolute speeds") {
+    constexpr const int c_defaultSpeed{200};
+    Scheduler sch;
+    MockSystem sys;
+    state s{sch, sys};
+    s.gcode_state_.relative_moves = true;
+    s.gcode_state_.use_mm = true;
+
+    struct TestData {
+        std::string description;
+        std::optional<double> x, y;
+        int expected_x_speed, expected_y_speed;
+    };
+
+    for (auto&& t : {
+             TestData{"No x or y coordinates - speeds are 0es", {}, {}, 0, 0},
+             TestData{"Only x", 123, {}, c_defaultSpeed, 0},
+             TestData{"Only -x", -123, {}, c_defaultSpeed, 0},
+             TestData{"Only y", {}, 123, 0, c_defaultSpeed},
+             TestData{"Only -y", {}, -123, 0, c_defaultSpeed},
+             TestData{"x == y", 42.0*s.gcode_state_.c_stepsToMm[0], 42.0*s.gcode_state_.c_stepsToMm[1], 141, 141}, // 141 is 141.421356237 cast to int.
+             TestData{"x == -y", 42.0*s.gcode_state_.c_stepsToMm[0], -42.0*s.gcode_state_.c_stepsToMm[1], 141, 141},
+             TestData{"-x == -y", -42.0*s.gcode_state_.c_stepsToMm[0], -42.0*s.gcode_state_.c_stepsToMm[1], 141, 141},
+             TestData{"x == y/6", 42.0*s.gcode_state_.c_stepsToMm[0], -7.0*s.gcode_state_.c_stepsToMm[1], 33, 5},
+         }) {
+        SECTION(t.description) {
+            const auto speeds{pos::calc_speeds(s, t.x, t.y)};
+            REQUIRE(speeds.x == t.expected_x_speed);
+            REQUIRE(speeds.y == t.expected_y_speed);
+        }
+    }
+}
+
 TEST_CASE("home() will run all motors till they stall and report stalled values") {
     //int step = 0;
     constexpr auto tool_motor{0};

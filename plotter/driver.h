@@ -69,7 +69,10 @@ namespace ev3plotter {
 
     namespace commands {
         void home(state &s, Scheduler& scheduler, const IWidget &prevWidget, std::function<void(std::variant<homing_results, std::string>)> done);
-        void go(state &s, Scheduler& scheduler, std::optional<raw_pos> x, std::optional<raw_pos> y, std::optional<raw_pos> z, std::function<void()> done);
+        void go(state &s, Scheduler& scheduler, std::optional<raw_pos> x, std::optional<raw_pos> y, std::optional<raw_pos> z, int speed_x, int speed_y, std::function<void()> done);
+        inline void go(state& s, Scheduler& scheduler, std::optional<raw_pos> x, std::optional<raw_pos> y, std::optional<raw_pos> z, std::function<void()> done) {
+            go(s, scheduler, x, y, z, 200, 200, done);
+        }
     }
 
     namespace pos {
@@ -100,6 +103,13 @@ namespace ev3plotter {
         normalized_pos x_travel(const homing_results &h) noexcept;
         normalized_pos y_travel(const homing_results &h) noexcept;
         normalized_pos z_travel(const homing_results &h) noexcept;
+
+        struct Speeds {
+            int x;
+            int y;
+        };
+
+        Speeds calc_speeds(const state& state, std::optional<double> x_val, std::optional<double> y_val);
     } // namespace pos
 }
 

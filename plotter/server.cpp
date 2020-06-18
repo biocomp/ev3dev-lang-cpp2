@@ -14,7 +14,7 @@ class ServerEvent {
 };
 
 template <typename TCallback>
-void for_each_token(std::string_view sv, TCallback callback) { 
+void for_each_token(std::string_view sv, TCallback callback) {
     std::size_t prev_pos{0};
     while (prev_pos != std::string_view::npos && prev_pos != sv.size()) {
         const auto next_pos{sv.find(' ', prev_pos)};
@@ -27,7 +27,7 @@ void for_each_token(std::string_view sv, TCallback callback) {
     }
 }
 
-void parse_val(std::string_view val, double& result) { 
+void parse_val(std::string_view val, double& result) {
     if (val.size() >= 64) {
         throw detail::ParseError{fmt::format("Value '{}' is too long", val)};
     }
@@ -46,7 +46,7 @@ void parse_val(std::string_view val, double& result) {
 
 ServerMessage read_home_command(std::string_view rest) {
     ServerMessage m;
-    
+
     m.Command = GCodeCommand::Home;
     for_each_token(rest, [&](auto token) {
         if (token == "X") {
@@ -71,7 +71,7 @@ std::variant<ServerMessage, detail::ParseError> detail::parse_message(std::strin
     };
 
     try {
-        const auto checkCommand{[message]() -> std::optional<CheckResult> { 
+        const auto checkCommand{[message]() -> std::optional<CheckResult> {
             if (message.size() > 0) {
                 const auto letter{message[0]};
                 const auto rest{message.substr(1)};
@@ -86,7 +86,7 @@ std::variant<ServerMessage, detail::ParseError> detail::parse_message(std::strin
                 }
 
                 const std::string numberStr{rest.substr(0, spacePos)};
-                
+
                 try {
                     if (letter == 'G') {
                         switch (std::stoi(numberStr)) {
@@ -164,13 +164,13 @@ std::variant<ServerMessage, detail::ParseError> detail::parse_message(std::strin
     catch (const std::invalid_argument& e) {
         return detail::ParseError{e.what()};
     }
-    
+
     return detail::ParseError{fmt::format("Unknown GCode command '{}'", message)};
 }
 
 Server::Server()
-    : read_queue_{"/ev3plotter_input", c_maxMessageSize, message_queue::option::read | message_queue::option::remove_on_destruction}
-    , write_queue_{"/ev3plotter_output", c_maxMessageSize, message_queue::option::write} {}
+    : read_queue_{"/ev3plotter_input", c_maxMessageSize, message_queue::option::read | message_queue::option::remove_on_destruction | message_queue::option::non_blocking}
+    , write_queue_{"/ev3plotter_output", c_maxMessageSize, message_queue::option::write | message_queue::option::non_blocking} {}
 
 void Server::handle_events(
     std::function<void(ServerMessage, std::function<void(const std::optional<HandlerError>&)>)> handler) {

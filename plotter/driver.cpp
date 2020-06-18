@@ -303,6 +303,8 @@ void commands::go(
     std::optional<raw_pos> x,
     std::optional<raw_pos> y,
     std::optional<raw_pos> z,
+    int speed_x,
+    int speed_y,
     std::function<void()> done) {
 
     class GoState : public std::enable_shared_from_this<GoState> {
@@ -313,6 +315,8 @@ void commands::go(
             std::optional<raw_pos> x,
             std::optional<raw_pos> y,
             std::optional<raw_pos> z,
+            int speed_x,
+            int speed_y,
             std::function<void()> done)
             : s_{s}
             , scheduler_{scheduler}
@@ -321,11 +325,11 @@ void commands::go(
             , z_{z}
             , done_{std::move(done)} {
             if (x) {
-                s.x_motor.set_stop_action("hold").set_speed_sp(200).set_position_sp(x->get()).run_to_abs_pos();
+                s.x_motor.set_stop_action("hold").set_speed_sp(speed_x).set_position_sp(x->get()).run_to_abs_pos();
             }
 
             if (y) {
-                s.y_motor.set_stop_action("hold").set_speed_sp(200).set_position_sp(y->get()).run_to_abs_pos();
+                s.y_motor.set_stop_action("hold").set_speed_sp(speed_y).set_position_sp(y->get()).run_to_abs_pos();
             }
 
             if (z) {
@@ -352,7 +356,7 @@ void commands::go(
             }
 
             if (! all_reached) {
-                scheduler_.schedule(std::chrono::milliseconds{200}, [this_ = shared_from_this()] { this_->step(); });
+                scheduler_.schedule(std::chrono::milliseconds{10}, [this_ = shared_from_this()] { this_->step(); });
             } else {
                 if (done_) {
                     done_();
@@ -368,7 +372,7 @@ void commands::go(
         std::function<void()> done_;
     };
 
-    scheduler.schedule([self_ = std::make_shared<GoState>(s, scheduler, x, y, z, std::move(done))] { self_->step(); });
+    scheduler.schedule([self_ = std::make_shared<GoState>(s, scheduler, x, y, z, speed_x, speed_y, std::move(done))] { self_->step(); });
 }
 
 // ###############
@@ -434,4 +438,37 @@ normalized_pos pos::x_travel(const homing_results& h) noexcept { return normaliz
 normalized_pos pos::y_travel(const homing_results& h) noexcept { return normalized_pos{std::abs((h.y_min - h.y_max).get())}; }
 normalized_pos pos::z_travel(const homing_results& h) noexcept {
     return normalized_pos{std::abs((h.tool_down_pos - h.tool_up_pos).get())};
+}
+
+
+pos::Speeds pos::calc_speeds(const state& state, std::optional<double> x_val, std::optional<double> y_val) {
+    const auto& scale{state.gcode_state_.use_mm ? state.gcode_state_.c_stepsToMm : state.gcode_state_.c_stepsToInches };
+    const auto scaled_x{x_val.value_or(0) / scale[0]};
+    const auto scaled_y{y_val.value_or(0) / scale[1]};
+
+    constexpr double defaultSpeed{200};
+
+    const auto [x_move, y_move]{[&]() {
+        if (! state.gcode_state_.relative_moves) {
+            return std::make_pair(scaled_x - pos::read_x(state).get(), scaled_y - pos::read_y(state).get());
+        } else {
+            return std::make_pair(scaled_x, scaled_y);
+        }
+    }()};
+
+    const auto x_is_0{std::abs(x_move) < std::numeric_limits<double>::epsilon()};
+    const auto y_is_0{std::abs(y_move) < std::numeric_limits<double>::epsilon()};
+
+    if (x_is_0 && y_is_0) {
+        return {0, 0};
+    } else if (x_is_0) {
+        return {0, static_cast<int>(defaultSpeed)};
+    } else if (y_is_0) {
+        return {static_cast<int>(defaultSpeed), 0};
+    } else {
+        const double x_to_y{double{x_move} / double{y_move}};
+        const double x_speed{std::sqrt(defaultSpeed*defaultSpeed/(1+x_to_y*x_to_y))};
+        const double y_speed{x_speed/x_to_y};
+        return {static_cast<int>(std::round(std::abs(x_speed))), static_cast<int>(std::round(std::abs(y_speed)))};
+    }
 }
